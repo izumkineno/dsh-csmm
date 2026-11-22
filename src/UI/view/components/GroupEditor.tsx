@@ -7,6 +7,8 @@ import {
 } from '../../contracts'
 import { useAppViewModel } from '../../viewmodel/useAppViewModel'
 
+type Filter = 'all' | 'selected' | 'unselected'
+
 function CheckRow(props: {
   kind: GroupItemKind
   name: string
@@ -31,10 +33,14 @@ function CheckRow(props: {
 
 export default function GroupEditor({ g }: { g: Group }) {
   const { state, actions, selectors } = useAppViewModel()
-  const sections = state.meta.sections
+  const sections = state.meta.sections.filter((section) => section.kind === 'section')
   const [name, setName] = useState(g.name)
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<Filter>('all')
   useEffect(() => { actions.ensureDraft(g) }, [g.id])
   useEffect(() => { setName(g.name) }, [g.id, g.name])
+  useEffect(() => { setQuery(''); setFilter('all') }, [g.id])
+
   const draft = (state.drafts[selectors.draftId(g)] as GroupItem[] | undefined) || g.items
   const dirty = name !== g.name || JSON.stringify(draft) !== JSON.stringify(g.items)
   const counts: Record<GroupItemKind, number> = { section: 0, mcp: 0, skill: 0 }
@@ -45,6 +51,24 @@ export default function GroupEditor({ g }: { g: Group }) {
   const toggle = (kind: GroupItemKind, n: string) => actions.toggleDraftCheck(g, kind, n)
   const onSave = () => { actions.saveGroup(g, name) }
   const onRevert = () => { actions.revertGroup(g); setName(g.name) }
+
+  const needle = query.trim().toLowerCase()
+  const match = (kind: GroupItemKind, resource: string): boolean => {
+    if (needle && !resource.toLowerCase().includes(needle)) return false
+    const on = check(kind, resource)
+    if (filter === 'selected') return on
+    if (filter === 'unselected') return !on
+    return true
+  }
+  const sectionList = sections.filter((section) => match('section', section.name))
+  const serverList = state.servers.filter((server) => match('mcp', server.name))
+  const skillList = visibleSkills.filter((skill) => match('skill', skill.name))
+
+  const toggleMany = (kind: GroupItemKind, names: string[], on: boolean) => {
+    names.forEach((resource) => {
+      if (check(kind, resource) !== on) actions.toggleDraftCheck(g, kind, resource)
+    })
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -61,6 +85,8 @@ export default function GroupEditor({ g }: { g: Group }) {
   const [delArm, setDelArm] = useState(false)
   useEffect(() => { setDelArm(false) }, [g.id])
   const effId = state.activeGroup[selectors.scopeKey(g.scope)]
+  const stateLabel = effId === g.id ? '生效中' : effId ? '未生效' : '继承中'
+  const stateClass = effId === g.id ? 'on' : effId ? 'off' : 'inherit'
 
   return (
     <>
@@ -73,6 +99,7 @@ export default function GroupEditor({ g }: { g: Group }) {
             aria-label="分组名称" />
           <span className={'chip scope-' + g.scope.kind}>{SCOPE_LABEL[g.scope.kind]}</span>
           <span className="chip">分组</span>
+          <span className={'chip state-' + stateClass}>{stateLabel}</span>
         </div>
       </div>
       <div className="editor-body">
@@ -84,6 +111,17 @@ export default function GroupEditor({ g }: { g: Group }) {
           <span className="grow"></span>
           <span className="muted" id="sumChars">≈ {selectors.groupTokens({ items: draft }, state)} tok</span>
         </div>
+
+        <div className="editor-tools">
+          <input type="search" className="search" value={query} onChange={(e) => setQuery(e.target.value)}
+            placeholder="搜索段、技能、MCP 服务器…" aria-label="搜索资源" />
+          <div className="seg" role="group" aria-label="资源筛选">
+            {([['all', '全部'], ['selected', '已选'], ['unselected', '未选']] as Array<[Filter, string]>).map(([key, label]) => (
+              <button key={key} className="btn tiny" aria-pressed={filter === key} onClick={() => setFilter(key)}>{label}</button>
+            ))}
+          </div>
+        </div>
+
         <div className="xlink-row">
           <div className="xlink" data-gotab="mcp" role="link" tabIndex={0} onClick={() => actions.setTab('mcp')}
             onKeyDown={(e: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -98,66 +136,97 @@ export default function GroupEditor({ g }: { g: Group }) {
             <span>◆</span><span>去管理技能</span><span className="muted">›</span>
           </div>
         </div>
-        <div className="res-head">提示词段 <span className="count" id="secCount">{counts.section}</span>
-          <span className="tag" title="只放行分组列出的段，未列入的不进入提示词">水泄式过滤</span></div>
-        {sources.map((src) => {
-          const list = sections.filter((s) => s.source === src && s.kind === 'section')
-          if (!list.length) return null
-          return (
-            <div key={src}>
-              <div className="source-head">{src}</div>
-              {list.map((s) => (
-                <CheckRow key={s.name} kind="section" name={s.name} label={s.name} meta={s.tokens + ' tok'}
-                  checked={check('section', s.name)} onChange={() => toggle('section', s.name)} />
-              ))}
+
+        <details className="res" open>
+          <summary className="res-head">
+            <span>提示词段</span>
+            <span className="count" id="secCount">{counts.section}/{sections.length}</span>
+            <span className="muted">{selectors.groupTokens({ items: draft.filter((it) => it.kind === 'section') }, state)} tok</span>
+            <span className="tag" title="只放行分组列出的段，未列入的不进入提示词">水泄式过滤</span>
+            <span className="spacer"></span>
+            <button className="btn tiny" onClick={(e) => { e.preventDefault(); toggleMany('section', sectionList.map((s) => s.name), true) }}>全选</button>
+            <button className="btn tiny" onClick={(e) => { e.preventDefault(); toggleMany('section', sectionList.map((s) => s.name), false) }}>清空</button>
+          </summary>
+          {sources.map((src) => {
+            const list = sectionList.filter((s) => s.source === src)
+            if (!list.length) return null
+            return (
+              <div key={src}>
+                <div className="source-head">{src}<span className="count">{list.filter((s) => check('section', s.name)).length}/{list.length}</span></div>
+                {list.map((s) => (
+                  <CheckRow key={s.name} kind="section" name={s.name} label={s.name} meta={s.tokens + ' tok'}
+                    checked={check('section', s.name)} onChange={() => toggle('section', s.name)} />
+                ))}
+              </div>
+            )
+          })}
+          <div className="source-head">运行上下文</div>
+          <CheckRow kind="section" name="working-directory:current" label="working-directory:current" meta="26 tok"
+            checked disabled />
+          {!sectionList.length && <div className="empty">没有匹配的提示词段。</div>}
+        </details>
+
+        <details className="res" open>
+          <summary className="res-head">
+            <span>MCP 服务器</span>
+            <span className="count" id="mcpCount">{counts.mcp}/{state.servers.length}</span>
+            <span className="muted">{selectors.groupTokens({ items: draft.filter((it) => it.kind === 'mcp') }, state)} tok</span>
+            <span className="tag cat-mcp" title="勾选服务器会同时带上它的配对段与工具">段 + 工具成对</span>
+            <span className="spacer"></span>
+            <button className="btn tiny" onClick={(e) => { e.preventDefault(); toggleMany('mcp', serverList.map((s) => s.name), true) }}>全选</button>
+            <button className="btn tiny" onClick={(e) => { e.preventDefault(); toggleMany('mcp', serverList.map((s) => s.name), false) }}>清空</button>
+          </summary>
+          {serverList.map((srv) => (
+            <div key={srv.name} className="res-row">
+              <input type="checkbox" data-check="1" data-kind="mcp" data-name={srv.name}
+                checked={check('mcp', srv.name)} onChange={() => toggle('mcp', srv.name)} aria-label={srv.name} />
+              <span className="r-ico">⚡</span>
+              <span className={'status-dot ' + (srv.status === 'connected' ? 'on' : 'off')}></span>
+              <span className="c-label">{srv.name}</span>
+              <span className="muted">mcp:{srv.name} · {srv.tools.length} 工具</span>
+              <button className="linkbtn" data-manage="mcp" data-name={srv.name}
+                onClick={() => actions.openDetail({ kind: 'mcp', name: srv.name })}>详情</button>
             </div>
-          )
-        })}
-        <div className="source-head">运行上下文</div>
-        <CheckRow kind="section" name="working-directory:current" label="working-directory:current" meta="26 tok"
-          checked disabled />
+          ))}
+          {!serverList.length && <div className="empty">没有匹配的 MCP 服务器。</div>}
+        </details>
 
-        <div className="res-head">MCP 服务器 <span className="count" id="mcpCount">{counts.mcp}</span>
-          <span className="tag cat-mcp" title="勾选服务器会同时带上它的配对段与工具">段 + 工具成对</span></div>
-        {selectors.filteredServers(state).map((srv) => (
-          <div key={srv.name} className="res-row">
-            <input type="checkbox" data-check="1" data-kind="mcp" data-name={srv.name}
-              checked={check('mcp', srv.name)} onChange={() => toggle('mcp', srv.name)} aria-label={srv.name} />
-            <span className="r-ico">⚡</span>
-            <span className={'status-dot ' + (srv.status === 'connected' ? 'on' : 'off')}></span>
-            <span className="c-label">{srv.name}</span>
-            <span className="muted">mcp:{srv.name} · {srv.tools.length} 工具</span>
-            <button className="linkbtn" data-manage="mcp" data-name={srv.name}
-              onClick={() => actions.openDetail({ kind: 'mcp', name: srv.name })}>详情</button>
-          </div>
-        ))}
-
-        <div className="res-head">技能 <span className="count" id="skillCount">{counts.skill}</span>
-          <span className="tag">按可见性</span></div>
-        {visibleSkills.map((sk) => (
-          <div key={sk.name} className="res-row">
-            <input type="checkbox" data-check="1" data-kind="skill" data-name={sk.name}
-              checked={check('skill', sk.name)} onChange={() => toggle('skill', sk.name)} aria-label={sk.name} />
-            <span className="r-ico">◆</span>
-            <span className="c-label">{sk.name}</span>
-            <span className="muted">{selectors.formatKB(sk.bytes)} KB · {sk.model ? '模型可调用' : '仅用户可用'}</span>
-            <button className="linkbtn" data-manage="skill" data-name={sk.name}
-              onClick={() => actions.openDetail({ kind: 'skill', name: sk.name })}>详情</button>
-          </div>
-        ))}
+        <details className="res" open>
+          <summary className="res-head">
+            <span>技能</span>
+            <span className="count" id="skillCount">{counts.skill}/{visibleSkills.length}</span>
+            <span className="muted">{selectors.groupTokens({ items: draft.filter((it) => it.kind === 'skill') }, state)} tok</span>
+            <span className="tag">按可见性</span>
+            <span className="spacer"></span>
+            <button className="btn tiny" onClick={(e) => { e.preventDefault(); toggleMany('skill', skillList.map((s) => s.name), true) }}>全选</button>
+            <button className="btn tiny" onClick={(e) => { e.preventDefault(); toggleMany('skill', skillList.map((s) => s.name), false) }}>清空</button>
+          </summary>
+          {skillList.map((sk) => (
+            <div key={sk.name} className="res-row">
+              <input type="checkbox" data-check="1" data-kind="skill" data-name={sk.name}
+                checked={check('skill', sk.name)} onChange={() => toggle('skill', sk.name)} aria-label={sk.name} />
+              <span className="r-ico">◆</span>
+              <span className="c-label">{sk.name}</span>
+              <span className="muted">{selectors.formatKB(sk.bytes)} KB · {sk.model ? '模型可调用' : '仅用户可用'}</span>
+              <button className="linkbtn" data-manage="skill" data-name={sk.name}
+                onClick={() => actions.openDetail({ kind: 'skill', name: sk.name })}>详情</button>
+            </div>
+          ))}
+          {!skillList.length && <div className="empty">没有匹配的技能。</div>}
+        </details>
 
         <details className="unlisted">
           <summary>未列入的资源（点一下加入本组）</summary>
           <div className="chips">
-            {sections.filter((s) => s.kind === 'section' && !check('section', s.name)).map((s) => (
+            {sections.filter((s) => !check('section', s.name) && (!needle || s.name.toLowerCase().includes(needle))).map((s) => (
               <button key={s.name} className="add-chip" data-additem data-kind="section" data-name={s.name}
                 onClick={() => actions.addDraftItem(g, 'section', s.name)}>+ {s.name}</button>
             ))}
-            {state.servers.filter((s) => !check('mcp', s.name)).map((s) => (
+            {state.servers.filter((s) => !check('mcp', s.name) && (!needle || s.name.toLowerCase().includes(needle))).map((s) => (
               <button key={s.name} className="add-chip" data-additem data-kind="mcp" data-name={s.name}
                 onClick={() => actions.addDraftItem(g, 'mcp', s.name)}>+ ⚡{s.name}</button>
             ))}
-            {visibleSkills.filter((s) => !check('skill', s.name)).map((s) => (
+            {visibleSkills.filter((s) => !check('skill', s.name) && (!needle || s.name.toLowerCase().includes(needle))).map((s) => (
               <button key={s.name} className="add-chip" data-additem data-kind="skill" data-name={s.name}
                 onClick={() => actions.addDraftItem(g, 'skill', s.name)}>+ ◆{s.name}</button>
             ))}
@@ -168,6 +237,7 @@ export default function GroupEditor({ g }: { g: Group }) {
         {effId !== g.id && <button className="btn small" data-effective title="设为当前作用域的生效分组，右侧预览即时更新" onClick={() => actions.setEffectiveGroup(g.id)}>设为生效</button>}
         <button id="saveBtn" className="btn primary" disabled={!dirty} onClick={onSave}>保存</button>
         <button id="revertBtn" className="btn" disabled={!dirty} onClick={onRevert}>还原</button>
+        {dirty && <span className="hint dirty">未保存更改</span>}
         <span className="grow"></span>
         {delArm
           ? <><button className="btn danger small" data-gdel="yes" onClick={() => actions.deleteItem(g, 'group')}>确认删除</button>

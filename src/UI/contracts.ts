@@ -302,6 +302,15 @@ export interface EffectiveItems {
   skill: Set<string>
 }
 
+export interface BudgetBreakdown {
+  section: number
+  skill: number
+  mcp: number
+  custom: number
+  total: number
+  counts: Record<GroupItemKind, number>
+}
+
 export interface Selectors {
   scopeKey(scope: Scope): string
   sameScope(a: Scope, b: Scope): boolean
@@ -331,6 +340,7 @@ export interface Selectors {
   effServerEnabled(state: AppState, name: string, skipKey?: string): boolean
   effToolOn(state: AppState, server: string, tool: string, skipKey?: string): boolean
   itemsTokens(items: GroupItem[], state: AppState): number
+  budgetBreakdown(state: AppState): BudgetBreakdown
   mergedTotal(state: AppState): number
 }
 

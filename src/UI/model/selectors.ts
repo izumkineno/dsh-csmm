@@ -1,6 +1,7 @@
 // 纯派生数据层：只读 state，不产生副作用，也不接触任何 Mock 内容。
 import type {
   AppState,
+  BudgetBreakdown,
   CoveredLayers,
   CustomPrompt,
   EffectiveItems,
@@ -83,11 +84,17 @@ const serverTokens = (state: AppState, name: string): number => {
   return server ? server.tokens : 0
 }
 
+const skillTokens = (state: AppState, name: string): number => {
+  const skill = state.skills.find((x) => x.name === name)
+  return skill ? tokenEstimate(skill.text) : 0
+}
+
 export const groupTokens = (group: Pick<Group, 'items'>, state: AppState): number => {
   let total = 0
   for (const item of group.items) {
     if (item.kind === 'section') total += sectionTokens(state, item.name)
     if (item.kind === 'mcp') total += serverTokens(state, item.name)
+    if (item.kind === 'skill') total += skillTokens(state, item.name)
   }
   return total
 }
@@ -228,16 +235,35 @@ export const itemsTokens = (items: GroupItem[], state: AppState): number => {
   for (const item of items) {
     if (item.kind === 'section') total += sectionTokens(state, item.name)
     if (item.kind === 'mcp') total += serverTokens(state, item.name)
+    if (item.kind === 'skill') total += skillTokens(state, item.name)
   }
   return total
 }
 
-export const mergedTotal = (state: AppState): number => {
+export const budgetBreakdown = (state: AppState): BudgetBreakdown => {
   const winner = winningLayer(state)
-  let total = winner.group ? itemsTokens(winner.group.items, state) : 0
-  for (const custom of winner.customs) total += tokenEstimate(custom.text)
-  return total
+  const out: BudgetBreakdown = {
+    section: 0,
+    skill: 0,
+    mcp: 0,
+    custom: 0,
+    total: 0,
+    counts: { section: 0, mcp: 0, skill: 0 },
+  }
+  if (winner.group) {
+    for (const item of winner.group.items) {
+      out.counts[item.kind] += 1
+      if (item.kind === 'section') out.section += sectionTokens(state, item.name)
+      if (item.kind === 'mcp') out.mcp += serverTokens(state, item.name)
+      if (item.kind === 'skill') out.skill += skillTokens(state, item.name)
+    }
+  }
+  for (const custom of winner.customs) out.custom += tokenEstimate(custom.text)
+  out.total = out.section + out.skill + out.mcp + out.custom
+  return out
 }
+
+export const mergedTotal = (state: AppState): number => budgetBreakdown(state).total
 
 export const selectors: Selectors = {
   scopeKey,
@@ -268,5 +294,6 @@ export const selectors: Selectors = {
   effServerEnabled,
   effToolOn,
   itemsTokens,
+  budgetBreakdown,
   mergedTotal,
 }
