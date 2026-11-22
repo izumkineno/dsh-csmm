@@ -147,6 +147,8 @@ export interface CustomPrompt {
   title: string
   scope: Scope
   text: string
+  /** 默认启用；false 时不进入生效内容与预算。 */
+  enabled?: boolean
 }
 
 export interface Meta {
@@ -395,6 +397,7 @@ export interface Actions {
   setCustomDraft(id: string, name: string, text: string): void
   saveCustom(custom: CustomPrompt, name: string, text: string): void
   revertCustom(custom: CustomPrompt): void
+  toggleCustom(id: string): void
   deleteItem(item: Group | CustomPrompt, kind: 'group' | 'custom'): void
   setGroupItem(kind: GroupItemKind, name: string): void
   addSkillsToGroup(names: string[]): void

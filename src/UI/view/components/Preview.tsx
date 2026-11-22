@@ -172,7 +172,7 @@ function buildDiagnostics(state: AppState, selectors: Selectors, actions: Action
       key: 'empty-chain',
       level: 'info',
       title: '当前作用域链没有生效分组',
-      detail: '这里只展示本层自定义提示词。在左栏选择一个分组并点「设为生效」后，会显示完整的注入内容。',
+      detail: '这里只展示本层已启用的自定义提示词。在左栏选择一个分组并点「设为生效」后，会显示完整的注入内容。',
     })
   }
   if (group && group.items.length === 0) {

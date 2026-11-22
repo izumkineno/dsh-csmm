@@ -359,6 +359,13 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
           pushToast(s, '已保存')
         })
       },
+      toggleCustom(id) {
+        mutate((s) => {
+          const target = s.customs.find((x) => x.id === id)
+          if (!target) return
+          target.enabled = target.enabled === false
+        })
+      },
       revertCustom(custom) {
         mutate((s) => {
           const target = s.customs.find((x) => x.id === custom.id)

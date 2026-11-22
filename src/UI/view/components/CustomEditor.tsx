@@ -49,10 +49,11 @@ export default function CustomEditor({ c }: { c: CustomPrompt }) {
             onChange={(e) => { setName(e.target.value); actions.setCustomDraft(c.id, e.target.value, text) }}
             aria-label="自定义标题" />
           <span className={'chip scope-' + c.scope.kind}>{SCOPE_LABEL[c.scope.kind]}</span>
+          {c.enabled === false && <span className="tag" title="左栏勾选框已取消，不进入生效内容与预算">已停用</span>}
         </div>
       </div>
       <div className="editor-body">
-        <div className="banner">自定义提示词追加到生效正文末尾；只影响当前作用域。</div>
+        <div className="banner">自定义提示词追加到生效正文末尾；只影响当前作用域。左栏勾选框可单独启用或停用。</div>
         <div className="field-label">正文</div>
         <textarea id="customText" className="custom-text" value={text}
           onChange={(e) => { setText(e.target.value); actions.setCustomDraft(c.id, name, e.target.value) }}

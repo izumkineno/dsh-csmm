@@ -179,7 +179,7 @@ export const winningLayer = (state: AppState): WinningLayer => {
       return {
         sc,
         group,
-        customs: customsOf(state.customs, sc, state.meta),
+        customs: customsOf(state.customs, sc, state.meta).filter((c) => c.enabled !== false),
         inherited: i < chain.length - 1,
         depth: i,
       }

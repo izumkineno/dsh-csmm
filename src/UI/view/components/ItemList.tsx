@@ -52,15 +52,29 @@ function PromptList() {
         })}
         <div className="rail-sec">自定义提示词 <span className="count">{customs.length}</span></div>
         {customs.length === 0 && <div className="sub-empty">该作用域还没有自定义提示词</div>}
-        {customs.map((c) => (
-          <button key={c.id} className={'item-row' + (state.active.kind === 'custom' && state.active.id === c.id ? ' active' : '')}
-            data-item="custom" data-id={c.id} onClick={() => actions.setActive('custom', c.id)}>
-            <span className="i-ico">✎</span>
-            <span className="i-main"><span className="i-name">{c.title}</span>
-              <span className="i-meta">{c.text.length} 字 · 追加到生效正文末尾</span></span>
-            {state.active.kind === 'custom' && state.active.id === c.id && <span className="i-off">编辑中</span>}
-          </button>
-        ))}
+        {customs.map((c) => {
+          const selected = state.active.kind === 'custom' && state.active.id === c.id
+          const on = c.enabled !== false
+          return (
+            <div key={c.id} className={'item-row' + (selected ? ' active' : '')}
+              data-item="custom" data-id={c.id} role="button" tabIndex={0} aria-pressed={selected}
+              onClick={() => actions.setActive('custom', c.id)}
+              onKeyDown={(e: ReactKeyboardEvent<HTMLDivElement>) => {
+                if (e.target !== e.currentTarget) return
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); actions.setActive('custom', c.id) }
+              }}>
+              <input type="checkbox" className="custom-check" data-customcheck checked={on}
+                aria-label={(on ? '停用自定义提示词 ' : '启用自定义提示词 ') + c.title}
+                onClick={(e) => e.stopPropagation()}
+                onChange={() => actions.toggleCustom(c.id)} />
+              <span className="i-ico">✎</span>
+              <span className="i-main"><span className="i-name">{c.title}</span>
+                <span className="i-meta">{on ? c.text.length + ' 字 · 追加到生效正文末尾' : '不进入生效内容与预算'}</span></span>
+              {selected && <span className="i-off">编辑中</span>}
+              {!on && <span className="i-off">已停用</span>}
+            </div>
+          )
+        })}
       </div>
     </>
   )
