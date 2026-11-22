@@ -292,10 +292,14 @@ export interface ConnectionOutcome {
   toast: string
 }
 
-/** 视图模型只依赖此端口；演示数据、延迟与伪造副作用全部由实现方承担。 */
+/** 视图模型只依赖此端口；真实宿主或测试替身都实现它。 */
 export interface HostPort {
   bootstrap(): Bootstrap
   testConnection(server: McpServer): Promise<ConnectionOutcome>
+  /** 读取指定作用域的读模型；工作区需要提供落盘根目录。 */
+  load?(scope: Scope, workspaceRoot?: string): Promise<Bootstrap>
+  /** 提交一条写命令；完成后视图模型会重新拉取读模型。 */
+  send?(command: Record<string, unknown>, workspaceRoot?: string): Promise<void>
 }
 
 // ---------- 派生数据 ----------

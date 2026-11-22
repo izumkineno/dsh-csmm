@@ -4,14 +4,16 @@ import type {
   Command,
   ConnectionOutcome,
   RpcRequest,
+  Scope,
   Snapshot,
 } from '../shared/types'
 
 const ROUTE = '/dsh-csmm/rpc'
 
 export interface RemoteHost extends HostPort {
-  snapshot(scope?: { kind: 'global' | 'workspace'; id?: string | null }): Promise<Snapshot>
+  snapshot(scope?: Scope): Promise<Snapshot>
   dispatch(command: Command): Promise<Snapshot>
+  revision(): number
 }
 
 export async function requestRpc(
@@ -36,24 +38,59 @@ export async function requestRpc(
 
 export function createRemoteHost(snapshot: Snapshot, workspaceRoot?: string): RemoteHost {
   let current = snapshot
+  let root = workspaceRoot
+
+  const load = async (scope: Scope, nextRoot?: string): Promise<Bootstrap> => {
+    if (nextRoot !== undefined) root = nextRoot || undefined
+    const result = await requestRpc({ method: 'snapshot', scope, workspaceRoot: root })
+    if (!result.snapshot) throw new Error('snapshot missing from response')
+    current = result.snapshot
+    return result.snapshot.bootstrap
+  }
+
+  const send = async (command: Record<string, unknown>, nextRoot?: string): Promise<void> => {
+    if (nextRoot !== undefined) root = nextRoot || undefined
+    const typed = { ...command, expectedRevision: current.revision } as Command
+    const result = await requestRpc({
+      method: 'dispatch',
+      command: typed,
+      scope: commandScope(typed),
+      workspaceRoot: root,
+    })
+    if (!result.snapshot) throw new Error('snapshot missing from response')
+    current = result.snapshot
+  }
+
   return {
     bootstrap(): Bootstrap {
       return current.bootstrap
     },
-    async snapshot(scope) {
-      const result = await requestRpc({ method: 'snapshot', scope, workspaceRoot })
+    async snapshot(scope?: Scope) {
+      if (!scope) return current
+      const result = await requestRpc({ method: 'snapshot', scope, workspaceRoot: root })
       if (!result.snapshot) throw new Error('snapshot missing from response')
       current = result.snapshot
       return result.snapshot
     },
-    async dispatch(command) {
-      const result = await requestRpc({ method: 'dispatch', command, scope: commandScope(command), workspaceRoot })
+    async dispatch(command: Command) {
+      const typed = { ...command, expectedRevision: current.revision } as Command
+      const result = await requestRpc({
+        method: 'dispatch',
+        command: typed,
+        scope: commandScope(typed),
+        workspaceRoot: root,
+      })
       if (!result.snapshot) throw new Error('snapshot missing from response')
       current = result.snapshot
       return result.snapshot
     },
+    revision() {
+      return current.revision
+    },
+    load,
+    send,
     async testConnection(server) {
-      const result = await requestRpc({ method: 'testConnection', server, workspaceRoot })
+      const result = await requestRpc({ method: 'testConnection', server, workspaceRoot: root })
       if (!result.outcome) throw new Error('outcome missing from response')
       return result.outcome
     },

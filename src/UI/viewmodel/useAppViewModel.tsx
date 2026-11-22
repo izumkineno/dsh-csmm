@@ -20,6 +20,7 @@ import type {
   ToastItem,
 } from '../contracts'
 import { resolvedServer, resolvedSkill, sameScope, scopeKey, selectors } from '../model/selectors'
+import { applyBootstrap, cloneState, makeInitialState } from './state'
 
 const ViewModelContext = createContext<AppViewModel | null>(null)
 
@@ -27,73 +28,6 @@ export function useAppViewModel(): AppViewModel {
   const vm = useContext(ViewModelContext)
   if (!vm) throw new Error('useAppViewModel must be used within AppViewModelProvider')
   return vm
-}
-
-function makeInitialState(bootstrap: Bootstrap): AppState {
-  return {
-    scope: { kind: 'global', id: null },
-    active: { kind: 'group', id: 'g1' },
-    detail: null,
-    tab: 'prompt',
-    sel: { skill: null, mcp: null },
-    saved: {},
-    activeGroup: { ...bootstrap.activeGroup },
-    overrides: { skill: {}, mcp: {}, tool: {} },
-    groups: bootstrap.groups,
-    customs: bootstrap.customs,
-    skills: bootstrap.skills,
-    servers: bootstrap.servers,
-    skillSel: [],
-    q: {},
-    showPlugin: true,
-    skDelConfirm: null,
-    mcpDelConfirm: null,
-    drafts: {},
-    trustDeclined: [],
-    modal: null,
-    toasts: [],
-    meta: {
-      workspaces: bootstrap.workspaces,
-      sections: bootstrap.sections,
-    },
-    copy: bootstrap.copy,
-  }
-}
-
-// 每次更新构造一份带独立嵌套容器的快照，命令里可以自由改动，React 仍能感知变化。
-function cloneState(prev: AppState): AppState {
-  return {
-    ...prev,
-    meta: prev.meta,
-    copy: prev.copy,
-    scope: { ...prev.scope },
-    active: { ...prev.active },
-    detail: prev.detail ? { ...prev.detail } : null,
-    sel: { ...prev.sel },
-    q: { ...prev.q },
-    activeGroup: { ...prev.activeGroup },
-    overrides: {
-      skill: Object.fromEntries(Object.entries(prev.overrides.skill).map(([k, v]) => [k, { ...v }])),
-      mcp: Object.fromEntries(Object.entries(prev.overrides.mcp).map(([k, v]) => [k, { ...v }])),
-      tool: Object.fromEntries(
-        Object.entries(prev.overrides.tool).map(([k, v]) => [
-          k,
-          Object.fromEntries(Object.entries(v).map(([j, u]) => [j, { ...u }])),
-        ]),
-      ),
-    },
-    saved: { ...prev.saved },
-    groups: prev.groups.map((g) => ({ ...g, scope: { ...g.scope }, items: g.items.map((it) => ({ ...it })) })),
-    customs: prev.customs.map((c) => ({ ...c, scope: { ...c.scope } })),
-    skills: prev.skills.map((s) => ({ ...s })),
-    servers: prev.servers.map((s) => ({ ...s, tools: s.tools.map((t) => ({ ...t })) })),
-    drafts: Object.fromEntries(
-      Object.entries(prev.drafts).map(([k, v]) => [k, Array.isArray(v) ? v.map((it) => ({ ...it })) : { ...v }]),
-    ) as AppState['drafts'],
-    trustDeclined: [...prev.trustDeclined],
-    modal: prev.modal ? ({ ...prev.modal } as ModalState) : null,
-    toasts: [...prev.toasts],
-  }
 }
 
 type ScopedDef = { name: string; scope: 'global' | 'workspace'; wsId?: string }
@@ -105,6 +39,8 @@ const copyServer = (server: McpServer): McpServer => ({ ...server, tools: server
 
 export function AppViewModelProvider({ host, children }: { host: HostPort; children: ReactNode }) {
   const [state, setState] = useState<AppState>(() => makeInitialState(host.bootstrap()))
+  const stateRef = useRef(state)
+  stateRef.current = state
   const seq = useRef(0)
 
   const mutate = useCallback((fn: (s: AppState) => void) => {
@@ -123,6 +59,29 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
       return id
     }
     const toast = (msg: string) => mutate((s) => { pushToast(s, msg) })
+
+    const workspaceRoot = (s: AppState): string | undefined =>
+      s.scope.kind === 'workspace'
+        ? s.meta.workspaces.find((w) => w.id === s.scope.id)?.path
+        : undefined
+
+    /** 提交写命令，然后用宿主读模型刷新；失败时保留本地状态并提示。 */
+    const sync = (command: Record<string, unknown>) => {
+      if (!host.send) return
+      const s = stateRef.current
+      const root = workspaceRoot(s)
+      const scope = { ...s.scope }
+      void host
+        .send(command, root ?? '')
+        .then(async () => {
+          if (!host.load) return
+          const bootstrap = await host.load(scope, root ?? '')
+          setState((prev) => applyBootstrap(prev, bootstrap))
+        })
+        .catch((err: unknown) => {
+          toast('保存失败：' + (err instanceof Error ? err.message : String(err)))
+        })
+    }
 
     const findGroup = (s: AppState, id: string | undefined): Group | null =>
       id ? s.groups.find((g) => g.id === id) ?? null : null
@@ -222,6 +181,15 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
             }
           }
         })
+        if (host.load) {
+          const ws = stateRef.current.meta.workspaces.find((w) => w.id === scope.id)
+          void host
+            .load(scope, ws?.path ?? '')
+            .then((bootstrap) => setState((prev) => applyBootstrap(prev, bootstrap)))
+            .catch((err: unknown) => {
+              toast('读取作用域失败：' + (err instanceof Error ? err.message : String(err)))
+            })
+        }
       },
       setTab(tab: PageTab) {
         mutate((s) => { s.tab = tab; s.detail = null; s.sel = { skill: null, mcp: null } })
@@ -253,6 +221,8 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
             else delete p.activeGroup[k]
           }), 6000)
         })
+        const target = findGroup(stateRef.current, id)
+        if (target) sync({ type: 'group.effective', scope: target.scope, groupId: id })
       },
       inheritGroup() {
         mutate((s) => {
@@ -262,6 +232,7 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
           s.detail = null
           pushToast(s, '已恢复继承（沿用下层分组）')
         })
+        sync({ type: 'group.inherit', scope: stateRef.current.scope })
       },
       setNone() {
         mutate((s) => {
@@ -270,6 +241,7 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
           s.detail = null
           pushToast(s, '本层已声明不使用分组（阻断继承）')
         })
+        sync({ type: 'group.none', scope: stateRef.current.scope })
       },
       openDetail(detail) { mutate((s) => { s.detail = detail }) },
       closeDetail() { mutate((s) => { s.detail = null }) },
@@ -326,17 +298,25 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
         })
       },
       saveGroup(group, name) {
+        const before = stateRef.current
+        const original = findGroup(before, group.id) ?? group
+        const draft = (before.drafts[selectors.draftId(group)] as GroupItem[] | undefined) ?? original.items
+        const next: Group = {
+          ...original,
+          name: (name || '').trim() || '未命名分组',
+          items: draft.map((it) => ({ kind: it.kind, name: it.name })),
+        }
         mutate((s) => {
           const target = findGroup(s, group.id)
           if (!target) return
           const k = selectors.draftId(group)
-          target.name = (name || '').trim() || '未命名分组'
-          const draft = (s.drafts[k] as GroupItem[] | undefined) || target.items
-          target.items = draft.map((it) => ({ kind: it.kind, name: it.name }))
+          target.name = next.name
+          target.items = next.items.map((it) => ({ kind: it.kind, name: it.name }))
           s.saved[target.id] = JSON.stringify(target.items)
           delete s.drafts[k]
           pushToast(s, '分组已保存')
         })
+        sync({ type: 'group.save', scope: next.scope, group: next, name: next.name })
       },
       revertGroup(group) {
         mutate((s) => {
@@ -349,15 +329,23 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
         mutate((s) => { s.drafts['custom:' + id] = { name, text } })
       },
       saveCustom(custom, name, text) {
+        const before = stateRef.current
+        const target = before.customs.find((x) => x.id === custom.id) ?? custom
+        const next: CustomPrompt = {
+          ...target,
+          title: (name || '').trim() || '未命名自定义',
+          text,
+        }
         mutate((s) => {
-          const target = s.customs.find((x) => x.id === custom.id)
-          if (!target) return
-          target.title = (name || '').trim() || '未命名自定义'
-          target.text = text
-          s.saved[target.id] = JSON.stringify(target.text)
-          delete s.drafts['custom:' + target.id]
+          const current = s.customs.find((x) => x.id === custom.id)
+          if (!current) return
+          current.title = next.title
+          current.text = next.text
+          s.saved[current.id] = JSON.stringify(current.text)
+          delete s.drafts['custom:' + current.id]
           pushToast(s, '已保存')
         })
+        sync({ type: 'custom.save', scope: next.scope, custom: next })
       },
       toggleCustom(id) {
         mutate((s) => {
@@ -365,6 +353,8 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
           if (!target) return
           target.enabled = target.enabled === false
         })
+        const target = stateRef.current.customs.find((x) => x.id === id)
+        if (target) sync({ type: 'custom.toggle', scope: target.scope, id })
       },
       revertCustom(custom) {
         mutate((s) => {
@@ -401,6 +391,13 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
             }), 6000)
           }
         })
+        if (kind === 'group') {
+          const group = item as Group
+          sync({ type: 'group.delete', scope: group.scope, id: group.id })
+        } else {
+          const custom = item as CustomPrompt
+          sync({ type: 'custom.delete', scope: custom.scope, id: custom.id })
+        }
       },
 
       // ---- 资源成员关系 ----
@@ -451,9 +448,35 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
           pushToast(s, (sk.enabled === false ? '已停用 ' : '已启用 ') + name
             + (sk.scope === 'workspace' ? '（当前工作区）' : '（全局）'))
         })
+        const s = stateRef.current
+        const local = currentDef(s.skills, s, name)
+        const base = local ?? resolveSkill(s, name)
+        if (base) {
+          const scope: Scope = local
+            ? local.scope === 'global'
+              ? { kind: 'global', id: null }
+              : { kind: 'workspace', id: local.wsId }
+            : { ...s.scope }
+          sync({
+            type: 'skill.save',
+            scope,
+            skill: {
+              ...base,
+              scope: scope.kind,
+              wsId: scope.kind === 'workspace' ? scope.id ?? undefined : undefined,
+              enabled: (local ? local.enabled !== false : base.enabled !== false) === false,
+            },
+          })
+        }
       },
       setSkDelConfirm(name) { mutate((s) => { s.skDelConfirm = name }) },
       deleteSkill(name) {
+        const localBefore = currentDef(stateRef.current.skills, stateRef.current, name)
+        const scopeBefore = localBefore?.scope === 'global'
+          ? { kind: 'global' as const, id: null }
+          : localBefore?.scope === 'workspace'
+            ? { kind: 'workspace' as const, id: localBefore.wsId }
+            : { ...stateRef.current.scope }
         mutate((s) => {
           const local = currentDef(s.skills, s, name)
           const snapshot = copyGroups(s.groups)
@@ -487,8 +510,18 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
             p.sel.skill = name
           }), 6000)
         })
+        if (localBefore) {
+          sync({ type: 'skill.delete', scope: scopeBefore, name })
+        } else if (scopeBefore.kind === 'workspace') {
+          const base = resolveSkill(stateRef.current, name)
+          if (base) sync({ type: 'skill.save', scope: scopeBefore, skill: { ...base, scope: 'workspace', wsId: scopeBefore.id ?? undefined, enabled: false } })
+        }
       },
       moveSkill(name, target) {
+        const before = stateRef.current
+        const local = currentDef(before.skills, before, name)
+        const base = local || resolveSkill(before, name)
+        const wsId = before.scope.kind === 'workspace' ? before.scope.id ?? undefined : before.meta.workspaces[0]?.id
         mutate((s) => {
           const local = currentDef(s.skills, s, name)
           const base = local || resolveSkill(s, name)
@@ -507,6 +540,15 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
             pushToast(s, '已复制到当前工作区：' + name)
           }
         })
+        if (base) {
+          const from: Scope = base.scope === 'global'
+            ? { kind: 'global', id: null }
+            : { kind: 'workspace', id: base.wsId }
+          const to: Scope = target === 'global'
+            ? { kind: 'global', id: null }
+            : { kind: 'workspace', id: wsId }
+          sync({ type: 'skill.copy', from, to, names: [name] })
+        }
       },
       openSkillDir() { mutate((s) => { pushToast(s, s.copy.skillDir) }) },
       addSkillsFromFiles(files, fromFolder) {
@@ -562,6 +604,12 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
           if (tool) tool.on = on
           srv.filterDirty = true
         })
+        const s = stateRef.current
+        const srv = currentDef(s.servers, s, serverName) ?? resolveServer(s, serverName)
+        if (srv) {
+          const scope: Scope = srv.scope === 'global' ? { kind: 'global', id: null } : { kind: 'workspace', id: srv.wsId }
+          sync({ type: 'mcp.tools', scope, name: serverName, tools: srv.tools.map((t) => ({ ...t, on: t.name === toolName ? on : t.on })) })
+        }
       },
       setAllTools(serverName, on, names) {
         mutate((s) => {
@@ -574,6 +622,18 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
           })
           srv.filterDirty = true
         })
+        const s = stateRef.current
+        const srv = currentDef(s.servers, s, serverName) ?? resolveServer(s, serverName)
+        if (srv) {
+          const scope: Scope = srv.scope === 'global' ? { kind: 'global', id: null } : { kind: 'workspace', id: srv.wsId }
+          const set = names ? new Set(names) : null
+          sync({
+            type: 'mcp.tools',
+            scope,
+            name: serverName,
+            tools: srv.tools.map((t) => ({ ...t, on: set && !set.has(t.name) ? t.on : on })),
+          })
+        }
       },
       saveToolList(serverName) {
         mutate((s) => {
@@ -616,6 +676,17 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
           pushToast(s, (srv.enabled === false ? '已停用 ' : '已启用 ') + name
             + (srv.scope === 'workspace' ? '（当前工作区）' : '（全局）'))
         })
+        const s = stateRef.current
+        const local = currentDef(s.servers, s, name)
+        const base = local ?? resolveServer(s, name)
+        if (base) {
+          const scope: Scope = s.scope
+          sync({
+            type: 'mcp.save',
+            scope,
+            server: { ...base, scope: scope.kind, wsId: scope.kind === 'workspace' ? scope.id ?? undefined : undefined, enabled: (local ? local.enabled !== false : base.enabled !== false) === false },
+          })
+        }
       },
       oauthToggle(name) {
         mutate((s) => {
@@ -624,8 +695,25 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
           srv.oauth = !srv.oauth
           pushToast(s, srv.oauth ? s.copy.oauthOn : s.copy.oauthOff)
         })
+        const s = stateRef.current
+        const local = currentDef(s.servers, s, name)
+        const base = local ?? resolveServer(s, name)
+        if (base) {
+          const scope: Scope = s.scope
+          sync({
+            type: 'mcp.save',
+            scope,
+            server: { ...base, scope: scope.kind, wsId: scope.kind === 'workspace' ? scope.id ?? undefined : undefined, oauth: base.oauth !== true },
+          })
+        }
       },
       deleteMcp(name) {
+        const localBefore = currentDef(stateRef.current.servers, stateRef.current, name)
+        const scopeBefore: Scope = localBefore?.scope === 'global'
+          ? { kind: 'global', id: null }
+          : localBefore?.scope === 'workspace'
+            ? { kind: 'workspace', id: localBefore.wsId }
+            : { ...stateRef.current.scope }
         mutate((s) => {
           const local = currentDef(s.servers, s, name)
           const snapshot = copyGroups(s.groups)
@@ -657,6 +745,12 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
             p.sel.mcp = name
           }), 6000)
         })
+        if (localBefore) {
+          sync({ type: 'mcp.delete', scope: scopeBefore, name })
+        } else if (scopeBefore.kind === 'workspace') {
+          const base = resolveServer(stateRef.current, name)
+          if (base) sync({ type: 'mcp.save', scope: scopeBefore, server: { ...base, scope: 'workspace', wsId: scopeBefore.id ?? undefined, enabled: false } })
+        }
       },
       setMcpDelConfirm(name) { mutate((s) => { s.mcpDelConfirm = name }) },
       restartConnection() { mutate((s) => { pushToast(s, s.copy.restart) }) },
@@ -699,6 +793,7 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
         })
       },
       saveServer(input, editing) {
+        let saved: McpServer | null = null
         mutate((s) => {
           const modal = s.modal
           if (!modal || modal.type !== 'serverForm') return
@@ -769,8 +864,14 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
           } else {
             pushToast(s, '已保存 ' + name + s.copy.serverSaved + (target.scope === 'workspace' ? '（当前工作区覆盖）' : ''))
           }
+          saved = { ...target, tools: target.tools.map((t) => ({ ...t })) }
           s.modal = null
         })
+        if (saved) {
+          const s = stateRef.current
+          const scope: Scope = s.scope
+          sync({ type: 'mcp.save', scope, server: saved })
+        }
       },
       openRaw(srv) {
         const yaml = 'kind: mcp-server\nserverName: ' + srv.name + '\ntransport: ' + srv.transport + '\n' +
@@ -789,6 +890,7 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
           s.modal = null
           pushToast(s, '已信任工作区 ' + (ws ? ws.title : wsId))
         })
+        sync({ type: 'trust.set', workspaceId: wsId, trusted: true })
       },
       declineTrust(wsId) {
         mutate((s) => {

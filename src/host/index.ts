@@ -20,7 +20,8 @@ interface RouteServer {
 }
 
 interface WorkspaceRegistryLike {
-  resolveByPath?: (root: string) => Promise<{ id?: string; title?: string } | undefined>
+  resolveByPath?: (root: string) => Promise<{ id?: string; title?: string; path?: string } | undefined>
+  list?: () => Promise<Array<{ id?: string; title?: string; path?: string }>>
 }
 
 export function apply(ctx: HostContext): void {
@@ -51,26 +52,45 @@ async function openService(ctx: HostContext, workspaceRoot?: string): Promise<Cs
   let workspace: WorkspaceBinding | undefined
   let workspaces: WorkspaceRecord[] | undefined
 
+  const registry = lookup<WorkspaceRegistryLike>(ctx, 'workspaceRegistry')
+  let currentId: string | undefined
   if (workspaceRoot) {
-    const registry = lookup<WorkspaceRegistryLike>(ctx, 'workspaceRegistry')
-    let id: string | undefined
     try {
-      const resolved = await registry?.resolveByPath?.(workspaceRoot)
-      id = resolved?.id
+      currentId = (await registry?.resolveByPath?.(workspaceRoot))?.id
     } catch {
-      id = undefined
+      currentId = undefined
     }
-    if (id) {
-      workspace = { id, paths: workspacePaths(workspaceRoot, id) }
-      workspaces = [
-        {
-          id,
-          title: path.basename(workspaceRoot) || id,
-          path: workspaceRoot,
-          trusted: false,
-        },
-      ]
+    if (currentId) {
+      workspace = { id: currentId, paths: workspacePaths(workspaceRoot, currentId) }
     }
+  }
+
+  let listed: Array<{ id?: string; title?: string; path?: string }> = []
+  try {
+    listed = (await registry?.list?.()) ?? []
+  } catch {
+    listed = []
+  }
+  if (listed.length) {
+    workspaces = listed
+      .filter((w): w is { id: string; title?: string; path: string } => Boolean(w.id && w.path))
+      .map((w) => ({
+        id: w.id,
+        title: w.title || path.basename(w.path) || w.id,
+        path: w.path,
+        trusted: false,
+        current: w.id === currentId,
+      }))
+  } else if (currentId && workspaceRoot) {
+    workspaces = [
+      {
+        id: currentId,
+        title: path.basename(workspaceRoot) || currentId,
+        path: workspaceRoot,
+        trusted: false,
+        current: true,
+      },
+    ]
   }
 
   return new CsmmService({ global, workspace, workspaces, sections: [] })
