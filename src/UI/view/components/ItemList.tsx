@@ -18,15 +18,17 @@ function PromptList() {
         <button className="btn small" onClick={() => actions.newCustom()}>+ 新自定义</button>
       </div>
       <div className="scroll">
-        <button className={'item-row' + (activeId === undefined ? ' active' : '')} data-none title="删除本层声明，沿用下层的分组"
-          onClick={() => actions.inheritGroup()}>
-          <span className="i-ico">↳</span><span className="i-main"><span className="i-name">继承下层</span>
-          <span className="i-meta">本层不声明分组，沿用全局的生效分组</span></span>
-        </button>
+        {state.scope.kind === 'workspace' && (
+          <button className={'item-row' + (activeId === undefined ? ' active' : '')} data-none title="删除本层声明，沿用下层的分组"
+            onClick={() => actions.inheritGroup()}>
+            <span className="i-ico">↳</span><span className="i-main"><span className="i-name">继承下层</span>
+            <span className="i-meta">本层不声明分组，沿用全局的生效分组</span></span>
+          </button>
+        )}
         <button className={'item-row' + (activeId === '' ? ' active' : '')} data-none-explicit title="本层显式声明不使用分组，阻断继承"
           onClick={() => actions.setNone()}>
           <span className="i-ico">∅</span><span className="i-main"><span className="i-name">不使用分组</span>
-          <span className="i-meta">本层生效内容为空，阻断继承</span></span>
+          <span className="i-meta">{state.scope.kind === 'workspace' ? '本层生效内容为空，阻断继承' : '全局不使用任何分组'}</span></span>
         </button>
         <div className="rail-sec">分组 <span className="count">{groups.length}</span></div>
         {groups.length === 0 && <div className="sub-empty">该作用域还没有分组</div>}
