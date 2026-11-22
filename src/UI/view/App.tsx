@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import type { CustomPrompt, Group } from '../contracts'
 import { useAppViewModel } from '../viewmodel/useAppViewModel'
 import CustomEditor from './components/CustomEditor'
@@ -39,6 +40,10 @@ function Editor() {
 export default function App() {
   const { state } = useAppViewModel()
   const scopeCount = 1 + state.meta.workspaces.length
+  const mainRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    mainRef.current?.focus()
+  }, [state.detail, state.tab, state.active.kind, state.active.id])
   return (
     <div className="app">
       <TopBar />
@@ -50,7 +55,7 @@ export default function App() {
           <div className="rail-foot">全局定义可被工作区同名定义覆盖。</div>
         </nav>
         <nav className="col" aria-label="列表"><ErrorBoundary><ItemList /></ErrorBoundary></nav>
-        <main className="col" aria-label="编辑"><ErrorBoundary><Editor /></ErrorBoundary></main>
+        <main className="col" aria-label="编辑" ref={mainRef} tabIndex={-1}><ErrorBoundary><Editor /></ErrorBoundary></main>
         <aside className="col" aria-label="生效预览"><ErrorBoundary><Preview /></ErrorBoundary></aside>
       </div>
       <Toast />

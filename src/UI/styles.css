@@ -441,3 +441,6 @@ details.res:not([open]) > summary { border-bottom: 0; }
 
 .trust-banner { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-style: solid; border-color: var(--warn); }
 .trust-banner .btn { flex: none; }
+
+main.col:focus { outline: none; }
+main.col:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }

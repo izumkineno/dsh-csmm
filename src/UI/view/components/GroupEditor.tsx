@@ -242,8 +242,8 @@ export default function GroupEditor({ g }: { g: Group }) {
         </details>
       </div>
       <div className="editor-foot">
-        {effId !== g.id && <button className="btn small" data-effective title="设为当前作用域的生效分组，右侧预览即时更新" onClick={() => actions.setEffectiveGroup(g.id)}>设为生效</button>}
-        <button id="saveBtn" className="btn primary" disabled={!dirty} onClick={onSave}>保存</button>
+        {effId !== g.id && <button className="btn small" data-effective title={dirty ? '保存当前更改并设为生效分组' : '设为当前作用域的生效分组，右侧预览即时更新'} onClick={() => actions.setEffectiveGroup(g.id)}>{dirty ? '保存并设为生效' : '设为生效'}</button>}
+        <button id="saveBtn" className="btn primary" title="只保存草稿，不改动生效分组" disabled={!dirty} onClick={onSave}>保存草稿</button>
         <button id="revertBtn" className="btn" disabled={!dirty} onClick={onRevert}>还原</button>
         {dirty && <span className="hint dirty">未保存更改</span>}
         <span className="grow"></span>
