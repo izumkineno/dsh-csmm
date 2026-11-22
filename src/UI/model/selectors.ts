@@ -283,12 +283,16 @@ export const itemsTokens = (items: GroupItem[], state: AppState): number => {
 export const budgetBreakdown = (state: AppState): BudgetBreakdown => {
   const winner = winningLayer(state)
   const out: BudgetBreakdown = {
+    context: 0,
     section: 0,
     skill: 0,
     mcp: 0,
     custom: 0,
     total: 0,
     counts: { section: 0, mcp: 0, skill: 0 },
+  }
+  for (const section of state.meta.sections) {
+    if (section.kind === 'context') out.context += section.tokens
   }
   if (winner.group) {
     for (const item of winner.group.items) {
@@ -299,7 +303,7 @@ export const budgetBreakdown = (state: AppState): BudgetBreakdown => {
     }
   }
   for (const custom of winner.customs) out.custom += tokenEstimate(custom.text)
-  out.total = out.section + out.skill + out.mcp + out.custom
+  out.total = out.context + out.section + out.skill + out.mcp + out.custom
   return out
 }
 

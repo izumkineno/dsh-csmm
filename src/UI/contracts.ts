@@ -318,6 +318,7 @@ export interface EffectiveItems {
 }
 
 export interface BudgetBreakdown {
+  context: number
   section: number
   skill: number
   mcp: number

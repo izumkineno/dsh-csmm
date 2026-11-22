@@ -280,6 +280,7 @@
   background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px;
 }
 .budget-seg { display: block; height: 100%; min-width: 2px; }
+.budget-seg.context { background: var(--muted); }
 .budget-seg.section { background: var(--accent); }
 .budget-seg.skill { background: var(--skill); }
 .budget-seg.mcp { background: var(--warn); }
@@ -291,6 +292,7 @@
 .budget-legend-item.zero { opacity: .5; }
 .budget-legend-item b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
 .budget-dot { display: inline-block; width: 6px; height: 6px; border-radius: 2px; }
+.budget-dot.context { background: var(--muted); }
 .budget-dot.section { background: var(--accent); }
 .budget-dot.skill { background: var(--skill); }
 .budget-dot.mcp { background: var(--warn); }

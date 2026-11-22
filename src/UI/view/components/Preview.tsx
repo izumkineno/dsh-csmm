@@ -12,7 +12,8 @@ import { useAppViewModel } from '../../viewmodel/useAppViewModel'
 // 参考预算：主流 200K 上下文窗口的保守估算值，仅用于提示，不代表宿主真实上限。
 const CONTEXT_BUDGET = 200_000
 
-const SEGMENTS: Array<{ key: 'section' | 'skill' | 'mcp' | 'custom'; label: string }> = [
+const SEGMENTS: Array<{ key: 'context' | 'section' | 'skill' | 'mcp' | 'custom'; label: string }> = [
+  { key: 'context', label: '上下文' },
   { key: 'section', label: '提示词段' },
   { key: 'skill', label: '技能' },
   { key: 'mcp', label: 'MCP' },
@@ -133,6 +134,11 @@ function ItemRow(props: {
 function buildEffectiveText(state: AppState, selectors: Selectors): string {
   const winner = selectors.winningLayer(state)
   const lines: string[] = []
+  const contexts = state.meta.sections.filter((section) => section.kind === 'context')
+  if (contexts.length) {
+    lines.push('# 运行上下文')
+    for (const section of contexts) lines.push('\n## ' + section.name + '\n' + section.text)
+  }
   if (winner.group) {
     lines.push('# 生效分组：' + winner.group.name)
     for (const item of winner.group.items) {
@@ -175,6 +181,15 @@ function buildDiagnostics(state: AppState, selectors: Selectors, actions: Action
       level: 'warn',
       title: '生效分组是空组',
       detail: '空组不会注入任何资源，模型只能看到自定义提示词。',
+      action: { label: '编辑分组', run: () => actions.setActive('group', group.id) },
+    })
+  }
+  if (group && group.items.length > 0 && !group.items.some((item) => item.kind === 'section')) {
+    out.push({
+      key: 'no-sections',
+      level: 'info',
+      title: '本组没有包含提示词段',
+      detail: '生效的系统提示词将为空，只加载技能、MCP 与自定义提示词。确认这是预期行为。',
       action: { label: '编辑分组', run: () => actions.setActive('group', group.id) },
     })
   }

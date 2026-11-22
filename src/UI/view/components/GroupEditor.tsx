@@ -110,7 +110,7 @@ export default function GroupEditor({ g }: { g: Group }) {
           <span className="pill" id="sumMcp">MCP {counts.mcp}</span>
           <span className="pill" id="sumSkill">技能 {counts.skill}</span>
           <span className="grow"></span>
-          <span className="muted" id="sumChars">≈ {selectors.groupTokens({ items: draft }, state)} tok</span>
+          <span className="muted" id="sumChars">组内 ≈ {selectors.groupTokens({ items: draft }, state)} tok</span>
         </div>
 
         <div className="editor-tools">
@@ -162,8 +162,10 @@ export default function GroupEditor({ g }: { g: Group }) {
             )
           })}
           <div className="source-head">运行上下文</div>
-          <CheckRow kind="section" name="working-directory:current" label="working-directory:current" meta="26 tok"
-            checked disabled />
+          {state.meta.sections.filter((s) => s.kind === 'context').map((s) => (
+            <CheckRow key={s.name} kind="section" name={s.name} label={s.name} meta={s.tokens + ' tok'}
+              checked disabled />
+          ))}
           {!sectionList.length && <div className="empty">没有匹配的提示词段。</div>}
         </details>
 
