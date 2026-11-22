@@ -26,6 +26,7 @@ const client = await build({
   platform: "browser",
   target: "es2022",
   jsx: "automatic",
+  loader: { ".css": "text" },
   external: ["react", "react/jsx-runtime", "react-dom"],
   logLevel: "info",
 });
