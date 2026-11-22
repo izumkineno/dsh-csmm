@@ -1,7 +1,18 @@
+import { useState } from 'react'
+import type { Skill } from '../../contracts'
 import { useAppViewModel } from '../../viewmodel/useAppViewModel'
+import Markdown from './Markdown'
+
+function skillFile(sk: Skill): string {
+  const lines = ['---', `name: ${sk.name}`, `description: ${sk.desc}`]
+  if (sk.model || sk.user) lines.push(`invocation: ${[sk.model ? 'model' : '', sk.user ? 'user' : ''].filter(Boolean).join(', ')}`)
+  lines.push('---', '', `# ${sk.label || sk.name}`, '', sk.text)
+  return lines.join('\n')
+}
 
 export default function SkillPane() {
   const { state, actions, selectors } = useAppViewModel()
+  const [view, setView] = useState<'preview' | 'raw'>('preview')
   const sk = selectors.resolvedSkill(state, state.sel.skill)
   if (!sk) {
     return (
@@ -44,9 +55,18 @@ export default function SkillPane() {
           <dt>状态</dt><dd>{off ? '停用' : '启用'}</dd>
           <dt>调用策略</dt><dd>{sk.model ? '模型可调用' : '仅用户可用'} · {sk.user ? '用户可调用' : '不向用户暴露'}</dd>
         </dl>
-        <div className="group-label">技能说明</div>
-        <div className="detail-text desc">{sk.desc}</div>
-        <div className="detail-text">{sk.text}</div>
+        <div className="skilldoc-head">
+          <span className="group-label">SKILL.md</span>
+          <div className="seg" role="tablist" aria-label="SKILL.md 显示方式">
+            <button role="tab" aria-selected={view === 'preview'} data-skillview="preview"
+              className={'btn small' + (view === 'preview' ? ' active' : '')} onClick={() => setView('preview')}>预览</button>
+            <button role="tab" aria-selected={view === 'raw'} data-skillview="raw"
+              className={'btn small' + (view === 'raw' ? ' active' : '')} onClick={() => setView('raw')}>原文</button>
+          </div>
+        </div>
+        {view === 'preview'
+          ? <div className="skilldoc"><Markdown source={skillFile(sk)} /></div>
+          : <pre className="md-raw" data-skillraw>{skillFile(sk)}</pre>}
         <div className="detail-actions">
           <button className="btn small" data-sktoggle disabled={!!sk.bundled} onClick={() => actions.toggleSkill(sk.name)}>{off ? '启用' : '停用'}</button>
           {sk.scope === 'global'
