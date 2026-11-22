@@ -73,7 +73,7 @@ function SkillList() {
   return (
     <>
       <div className="list-actions">
-        <input id="skillSearch" className="search" placeholder="搜索技能…" value={state.q.skill || ''}
+        <input id="skillSearch" className="search" title="在当前作用域可见的全部技能中搜索，跨切换标签保留" placeholder="搜索技能…" value={state.q.skill || ''}
           onChange={(e) => actions.setQuery('skill', e.target.value)} />
       </div>
       <div className="list-actions row2">
@@ -132,7 +132,7 @@ function McpList() {
   return (
     <>
       <div className="list-actions">
-        <input id="mcpSearch" className="search" placeholder="搜索服务器…" value={state.q.mcp || ''}
+        <input id="mcpSearch" className="search" title="在当前作用域可见的全部 MCP 服务器中搜索，跨切换标签保留" placeholder="搜索服务器…" value={state.q.mcp || ''}
           onChange={(e) => actions.setQuery('mcp', e.target.value)} />
       </div>
       <div className="list-actions row2">

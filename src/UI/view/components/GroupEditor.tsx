@@ -110,12 +110,17 @@ export default function GroupEditor({ g }: { g: Group }) {
           <span className="pill" id="sumMcp">MCP {counts.mcp}</span>
           <span className="pill" id="sumSkill">技能 {counts.skill}</span>
           <span className="grow"></span>
-          <span className="muted" id="sumChars">组内 ≈ {selectors.groupTokens({ items: draft }, state)} tok</span>
+          <span className="muted" id="sumChars" title="仅统计本组列出的提示词段、技能与 MCP，不含自定义提示词与运行上下文">组内资源 ≈ {selectors.groupTokens({ items: draft }, state)} tok</span>
         </div>
+        {counts.section === 0 && (counts.skill > 0 || counts.mcp > 0) && (
+          <div className="note" data-empty-prompt>
+            本组没有勾选任何提示词段：设为生效后系统提示词为空，仅保留技能与 MCP。分组白名单不区分类型，需要提示词段时请在上方一并勾选。
+          </div>
+        )}
 
         <div className="editor-tools">
           <input type="search" className="search" value={query} onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索段、技能、MCP 服务器…" aria-label="搜索资源" />
+            title="仅搜索当前分组可加入的资源" placeholder="搜索本组可加入的资源…" aria-label="搜索本组资源" />
           <div className="seg" role="group" aria-label="资源筛选">
             {([['all', '全部'], ['selected', '已选'], ['unselected', '未选']] as Array<[Filter, string]>).map(([key, label]) => (
               <button key={key} className="btn tiny" aria-pressed={filter === key} onClick={() => setFilter(key)}>{label}</button>

@@ -323,7 +323,7 @@ function InspectorView() {
 
       <div className="inspector-tabs" role="tablist" aria-label="预览视图">
         <button role="tab" aria-selected={tab === 'content'} className={'inspector-tab' + (tab === 'content' ? ' active' : '')}
-          onClick={() => setTab('content')}>生效内容 <span className="n">{group ? group.items.length : 0}</span></button>
+          onClick={() => setTab('content')}>生效内容 <span className="n" title="本组项数，不含自定义提示词与运行上下文">{group ? group.items.length : 0}</span></button>
         <button role="tab" aria-selected={tab === 'diagnostics'} className={'inspector-tab' + (tab === 'diagnostics' ? ' active' : '')}
           onClick={() => setTab('diagnostics')}>诊断 <span className={'n' + (diagnostics.length ? ' has' : '')}>{diagnostics.length}</span></button>
       </div>
@@ -413,7 +413,7 @@ function InspectorView() {
           )}
 
           <div className="inspector-foot">
-            <span className="muted">合计 {budget.total.toLocaleString()} tok</span>
+            <span className="muted" title="当前生效内容合计：提示词段、技能、MCP、自定义提示词与运行上下文">生效合计 {budget.total.toLocaleString()} tok</span>
             <span className="muted">工具 deny {selectors.denyCountFor(state)}</span>
             <span className="muted">技能遮蔽 {selectors.shadowCountFor(state)}</span>
             <button className="btn small" onClick={copy}>复制生效内容</button>
