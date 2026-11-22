@@ -438,3 +438,6 @@ details.res:not([open]) > summary { border-bottom: 0; }
 .budget-bar { position: relative; }
 .budget-mark { position: absolute; top: -2px; bottom: -2px; width: 1px; background: color-mix(in oklab, var(--warn) 60%, transparent); pointer-events: none; }
 .budget-mark.danger { background: color-mix(in oklab, var(--danger) 65%, transparent); }
+
+.trust-banner { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-style: solid; border-color: var(--warn); }
+.trust-banner .btn { flex: none; }

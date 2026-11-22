@@ -7,8 +7,8 @@ function ScopeTag({ scope }: { scope: 'global' | 'workspace' }) {
 
 function PromptList() {
   const { state, actions, selectors } = useAppViewModel()
-  const groups = selectors.groupsOf(state.groups, state.scope)
-  const customs = selectors.customsOf(state.customs, state.scope)
+  const groups = selectors.groupsOf(state.groups, state.scope, state.meta)
+  const customs = selectors.customsOf(state.customs, state.scope, state.meta)
   const active = selectors.currentGroup(state)
   const activeId = state.activeGroup[selectors.scopeKey(state.scope)]
   return (
@@ -163,16 +163,26 @@ function McpList() {
 }
 
 export default function ItemList() {
-  const { state, selectors } = useAppViewModel()
+  const { state, actions, selectors } = useAppViewModel()
   const label = state.tab === 'prompt' ? '提示词' : state.tab === 'skill' ? '技能' : 'MCP'
   const count = state.tab === 'prompt'
-    ? selectors.groupsOf(state.groups, state.scope).length + selectors.customsOf(state.customs, state.scope).length
+    ? selectors.groupsOf(state.groups, state.scope, state.meta).length + selectors.customsOf(state.customs, state.scope, state.meta).length
     : state.tab === 'skill'
       ? selectors.visibleSkills(state).length
       : selectors.visibleServers(state).length
+  const restricted = selectors.isRestricted(state)
   return (
     <>
       <div className="col-head">{selectors.scopeCrumb(state.scope, state.meta)} · {label} <span className="count">{count}</span></div>
+      {restricted && (
+        <div className="note trust-banner" data-restricted>
+          <div><b>受限模式</b>：工作区配置尚未加载。信任后才会读取该工作区的分组、技能与 MCP 定义。</div>
+          <button className="btn small" data-trust-banner onClick={() => {
+            const ws = (state.meta.workspaces || []).find((w) => w.id === state.scope.id)
+            if (ws) actions.trustWorkspace(ws.id)
+          }}>信任并加载</button>
+        </div>
+      )}
       {state.tab === 'prompt' ? <PromptList /> : state.tab === 'skill' ? <SkillList /> : <McpList />}
     </>
   )

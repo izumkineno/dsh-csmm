@@ -177,8 +177,8 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
       }
     }
     const uniqueGroupName = (s: AppState): string => {
-      let n = selectors.groupsOf(s.groups, s.scope).length + 1
-      const names = new Set(selectors.groupsOf(s.groups, s.scope).map((g) => g.name))
+      let n = selectors.groupsOf(s.groups, s.scope, s.meta).length + 1
+      const names = new Set(selectors.groupsOf(s.groups, s.scope, s.meta).map((g) => g.name))
       while (names.has('分组 ' + n)) n += 1
       return '分组 ' + n
     }
@@ -288,7 +288,7 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
       },
       newCustom() {
         mutate((s) => {
-          const n = selectors.customsOf(s.customs, s.scope).length + 1
+          const n = selectors.customsOf(s.customs, s.scope, s.meta).length + 1
           const c: CustomPrompt = { id: 'c' + Date.now(), title: '自定义 ' + n, scope: { ...s.scope }, text: '' }
           s.customs.push(c)
           s.active = { kind: 'custom', id: c.id }

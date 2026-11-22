@@ -334,9 +334,10 @@ export interface Selectors {
   tokenEstimate(text: string): number
   currentWsId(scope: Scope, meta: Meta): string | null
   skillVisible(skill: Skill, scope: Scope, meta: Meta): boolean
+  isRestricted(state: AppState): boolean
   chainFor(scope: Scope, meta: Meta): Scope[]
-  groupsOf(groups: Group[], scope: Scope): Group[]
-  customsOf(customs: CustomPrompt[], scope: Scope): CustomPrompt[]
+  groupsOf(groups: Group[], scope: Scope, meta: Meta): Group[]
+  customsOf(customs: CustomPrompt[], scope: Scope, meta: Meta): CustomPrompt[]
   hasItem(list: GroupItem[], kind: GroupItemKind, name: string): boolean
   scopeTitle(scope: Scope | null | undefined, meta: Meta): string
   scopeCrumb(scope: Scope, meta: Meta): string

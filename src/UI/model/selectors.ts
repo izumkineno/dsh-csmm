@@ -50,18 +50,21 @@ const defScope = (def: ScopedDef): Scope => ({ kind: def.scope, id: def.wsId ?? 
 export function skillVisible(skill: Skill, scope: Scope, meta: Meta): boolean {
   if (skill.scope === 'global') return true
   const ws = currentWsId(scope, meta)
-  return !!ws && skill.wsId === ws
+  return !!ws && skill.wsId === ws && isTrustedWorkspace(meta, ws)
 }
 
 export function serverVisible(server: McpServer, scope: Scope, meta: Meta): boolean {
   if (server.scope === 'global') return true
   const ws = currentWsId(scope, meta)
-  return !!ws && server.wsId === ws
+  return !!ws && server.wsId === ws && isTrustedWorkspace(meta, ws)
 }
 
-export function chainFor(scope: Scope, _meta: Meta): Scope[] {
+export const isRestricted = (state: AppState): boolean =>
+  state.scope.kind === 'workspace' && !isTrustedWorkspace(state.meta, state.scope.id)
+
+export function chainFor(scope: Scope, meta: Meta): Scope[] {
   const out: Scope[] = [{ kind: 'global' }]
-  if (scope.kind === 'workspace') out.push(scope)
+  if (scope.kind === 'workspace' && isTrustedWorkspace(meta, scope.id)) out.push(scope)
   return out
 }
 
@@ -103,10 +106,14 @@ export const visibleServers = (state: AppState): McpServer[] => {
   return state.servers.filter((server) => chosen.get(server.name) === server)
 }
 
-export const groupsOf = (groups: Group[], scope: Scope): Group[] =>
-  groups.filter((g) => sameScope(g.scope, scope))
-export const customsOf = (customs: CustomPrompt[], scope: Scope): CustomPrompt[] =>
-  customs.filter((c) => sameScope(c.scope, scope))
+export const groupsOf = (groups: Group[], scope: Scope, meta: Meta): Group[] => {
+  if (scope.kind === 'workspace' && !isTrustedWorkspace(meta, scope.id)) return []
+  return groups.filter((g) => sameScope(g.scope, scope))
+}
+export const customsOf = (customs: CustomPrompt[], scope: Scope, meta: Meta): CustomPrompt[] => {
+  if (scope.kind === 'workspace' && !isTrustedWorkspace(meta, scope.id)) return []
+  return customs.filter((c) => sameScope(c.scope, scope))
+}
 export const hasItem = (list: GroupItem[], kind: GroupItemKind, name: string): boolean =>
   list.some((it) => it.kind === kind && it.name === name)
 
@@ -172,7 +179,7 @@ export const winningLayer = (state: AppState): WinningLayer => {
       return {
         sc,
         group,
-        customs: customsOf(state.customs, sc),
+        customs: customsOf(state.customs, sc, state.meta),
         inherited: i < chain.length - 1,
         depth: i,
       }
@@ -317,6 +324,7 @@ export const selectors: Selectors = {
   tokenEstimate,
   currentWsId,
   skillVisible,
+  isRestricted,
   chainFor,
   groupsOf,
   customsOf,

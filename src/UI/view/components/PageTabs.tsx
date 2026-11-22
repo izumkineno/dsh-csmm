@@ -7,7 +7,7 @@ export default function PageTabs() {
     <nav className="page-tabs" id="pageTabs" role="tablist" aria-label="页面">
       {PAGE_TABS.map((t) => {
         const n = t.id === 'prompt'
-          ? selectors.groupsOf(state.groups, state.scope).length + selectors.customsOf(state.customs, state.scope).length
+          ? selectors.groupsOf(state.groups, state.scope, state.meta).length + selectors.customsOf(state.customs, state.scope, state.meta).length
           : t.id === 'skill'
             ? selectors.visibleSkills(state).length
             : selectors.visibleServers(state).length
