@@ -199,7 +199,6 @@ export interface SkillAddModal {
 export interface MigrateModal {
   type: 'migrate'
   target: string
-  mode: 'copy' | 'move'
   checked: string[]
 }
 

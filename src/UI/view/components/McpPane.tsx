@@ -70,7 +70,7 @@ export default function McpPane() {
         <div className="filter-row">
           <span className="muted">{srv.tools.length - disabledCount}/{srv.tools.length} 启用</span>
           <span className="grow"></span>
-          <button className="btn small" data-toolsave disabled={!srv.filterDirty} onClick={() => actions.saveToolList(srv.name)}>保存工具清单</button>
+          <span className="muted" data-toolhint>工具开关即时生效</span>
         </div>
         {srv.testMsg && <div className="note">{srv.testMsg}</div>}
         <div className="group-label">服务器说明（进入提示词的配对段）</div>

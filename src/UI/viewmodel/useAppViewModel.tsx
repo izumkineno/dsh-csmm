@@ -581,19 +581,20 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
       testConnection(name) {
         let target: McpServer | null = null
         mutate((s) => {
-          target = ensureServer(s, name)
-          if (target) target.testing = true
+          target = currentDef(s.servers, s, name) || resolveServer(s, name) || null
+          if (target && currentDef(s.servers, s, name)) target.testing = true
         })
         if (!target) return
         void host.testConnection(target).then((outcome) => {
           mutate((s) => {
             const srv = currentDef(s.servers, s, name)
-            if (!srv) return
-            srv.testing = false
-            srv.tools = outcome.tools.map((t) => ({ ...t }))
-            srv.status = outcome.status
-            srv.testMsg = outcome.message
-            pushToast(s, outcome.toast)
+            if (srv) {
+              srv.testing = false
+              srv.tools = outcome.tools.map((t) => ({ ...t }))
+              srv.status = outcome.status
+              srv.testMsg = outcome.message
+            }
+            pushToast(s, outcome.toast + (srv ? '' : '（继承定义未被改写）'))
           })
         })
       },
@@ -659,7 +660,7 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
       updateModal(patch: ModalPatch) { mutate((s) => { if (s.modal) s.modal = { ...s.modal, ...patch } as ModalState }) },
       openSkillAdd() { mutate((s) => { s.modal = { type: 'skillAdd' } }) },
       openMigrate(preselect) {
-        mutate((s) => { s.modal = { type: 'migrate', target: '', mode: 'copy', checked: preselect || [] } })
+        mutate((s) => { s.modal = { type: 'migrate', target: '', checked: preselect || [] } })
       },
       runMigrate() {
         mutate((s) => {
@@ -668,22 +669,21 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
           if (!m.target) { pushToast(s, '请选择目标工作区'); return }
           if (!m.checked.length) { pushToast(s, '请至少选择一个技能'); return }
           const ws = s.meta.workspaces.find((w) => w.id === m.target)
-          let moved = 0
+          let copied = 0
+          let skipped = 0
           m.checked.forEach((name) => {
-            const base = currentDef(s.skills, s, name) || resolveSkill(s, name)
+            const base = resolveSkill(s, name)
             if (!base) return
-            if (m.mode === 'move') {
-              base.scope = 'workspace'
-              base.wsId = m.target
-            } else {
-              if (s.skills.some((x) => x.name === name && x.scope === 'workspace' && x.wsId === m.target)) return
-              s.skills.push({ ...base, scope: 'workspace', wsId: m.target })
+            if (s.skills.some((x) => x.name === name && x.scope === 'workspace' && x.wsId === m.target)) {
+              skipped += 1
+              return
             }
-            moved += 1
+            s.skills.push({ ...base, scope: 'workspace', wsId: m.target })
+            copied += 1
           })
           s.modal = null
           s.skillSel = []
-          pushToast(s, (m.mode === 'move' ? '已移动 ' : '已复制 ') + moved + ' 项到 ' + (ws ? ws.title : m.target))
+          pushToast(s, '已复制 ' + copied + ' 项到 ' + (ws ? ws.title : m.target) + (skipped ? '，跳过 ' + skipped + ' 项同名定义' : ''))
         })
       },
       openServerForm(srv, isNew) {

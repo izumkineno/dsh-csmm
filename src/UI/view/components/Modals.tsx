@@ -57,14 +57,7 @@ function Migrate({ m }: { m: MigrateModal }) {
           {targets.map((w) => <option key={w.id} value={w.id}>{w.title}</option>)}
         </select>
       </div>
-      <div className="f-row"><label>方式</label>
-        <div className="seg">
-          <button data-migmode="copy" aria-pressed={m.mode === 'copy'}
-            className={'btn small' + (m.mode === 'copy' ? ' on' : '')} onClick={() => actions.updateModal({ mode: 'copy' })}>复制</button>
-          <button data-migmode="move" aria-pressed={m.mode === 'move'}
-            className={'btn small' + (m.mode === 'move' ? ' on' : '')} onClick={() => actions.updateModal({ mode: 'move' })}>移动</button>
-        </div>
-      </div>
+      <div className="f-row"><label>说明</label><span className="muted">复制到目标工作区；全局定义保留，目标已有同名技能时跳过。</span></div>
       <div className="f-row col"><label>技能</label>
         <div className="mig-list">
           {list.length === 0 && <div className="sub-empty">当前作用域没有技能</div>}
@@ -78,7 +71,7 @@ function Migrate({ m }: { m: MigrateModal }) {
       </div>
       <div className="modal-foot">
         <button className="btn" onClick={() => actions.closeModal()}>取消</button>
-        <button className="btn primary" data-migrun onClick={() => actions.runMigrate()}>执行迁移</button>
+        <button className="btn primary" data-migrun onClick={() => actions.runMigrate()}>执行复制</button>
       </div>
     </>
   )
@@ -319,11 +312,10 @@ function Raw({ m }: { m: RawModal }) {
   const { actions } = useAppViewModel()
   return (
     <>
-      <div className="hint">服务器 {m.serverName} 的宿主原始配置（只读展示，保存交给宿主校验）</div>
-      <textarea id="fRaw" className="raw-text" value={m.text} onChange={(e) => actions.updateModal({ text: e.target.value })} />
+      <div className="hint">服务器 {m.serverName} 的宿主原始配置，仅供查看；编辑请使用「编辑配置」。修改会由宿主校验并写回。</div>
+      <textarea id="fRaw" className="raw-text" value={m.text} readOnly />
       <div className="modal-foot">
-        <button className="btn" onClick={() => actions.closeModal()}>取消</button>
-        <button className="btn primary" data-rawsave onClick={() => actions.rawSave()}>保存原文</button>
+        <button className="btn" onClick={() => actions.closeModal()}>关闭</button>
       </div>
     </>
   )
@@ -367,7 +359,7 @@ export default function Modals() {
   if (!m) return null
   const titles: Record<string, string> = {
     skillAdd: '添加技能',
-    migrate: '迁移技能',
+    migrate: '复制技能到工作区',
     serverForm: m.type === 'serverForm' && m.editing ? '编辑 MCP 服务器' : '添加 MCP 服务器',
     raw: '原始配置',
     workspaceTrust: '信任此工作区？',
