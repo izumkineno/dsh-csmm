@@ -7,7 +7,7 @@ export default function DetailView() {
   const back = <button className="linkbtn" data-back onClick={() => actions.closeDetail()}>‹ 返回</button>
   if (!d) return null
   if (d.kind === 'mcp') {
-    const srv = state.servers.find((s) => s.name === d.name)
+    const srv = selectors.resolvedServer(state, d.name)
     if (!srv) {
       return (
         <>
@@ -17,13 +17,16 @@ export default function DetailView() {
       )
     }
     const inGroup = !!group && selectors.hasItem(group.items, 'mcp', srv.name)
+    const inherited = srv.scope === 'global' && state.scope.kind === 'workspace'
     return (
       <>
         <div className="editor-head">
           <div className="crumbs">{back}<span className="sep">›</span><span>资源</span><span className="sep">›</span><span>{srv.name}</span></div>
           <div className="title-row"><strong>{srv.label || srv.name}</strong><span className="muted">/ {srv.name}</span>
             <span className={'chip ' + (srv.status === 'connected' ? 'chip-on' : '')}>{srv.status}</span>
-            <span className="chip">{srv.transport}</span></div>
+            <span className="chip">{srv.transport}</span>
+            <span className="tag" title={srv.scope === 'global' ? '定义在全局' : '定义在当前工作区'}>{srv.scope === 'global' ? '全局定义' : '工作区定义'}</span>
+            {inherited && <span className="tag" title="继承自全局，本层可停用或复制覆盖">继承自全局</span>}</div>
         </div>
         <div className="editor-body">
           <dl className="meta-grid">
@@ -55,7 +58,7 @@ export default function DetailView() {
       </>
     )
   }
-  const sk = state.skills.find((s) => s.name === d.name)
+  const sk = selectors.resolvedSkill(state, d.name)
   if (!sk) {
     return (
       <>
@@ -65,12 +68,15 @@ export default function DetailView() {
     )
   }
   const inGroup = !!group && selectors.hasItem(group.items, 'skill', sk.name)
+  const inherited = sk.scope === 'global' && state.scope.kind === 'workspace'
   return (
     <>
       <div className="editor-head">
         <div className="crumbs">{back}<span className="sep">›</span><span>资源</span><span className="sep">›</span><span>{sk.name}</span></div>
         <div className="title-row"><strong>{sk.label || sk.name}</strong><span className="muted">/ {sk.name}</span>
-          {sk.bundled && <span className="tag">插件</span>}</div>
+          {sk.bundled && <span className="tag">插件</span>}
+          <span className="tag" title={sk.scope === 'global' ? '定义在全局' : '定义在当前工作区'}>{sk.scope === 'global' ? '全局定义' : '工作区定义'}</span>
+          {inherited && <span className="tag" title="继承自全局，本层可停用或复制覆盖">继承自全局</span>}</div>
       </div>
       <div className="editor-body">
         <dl className="meta-grid">
@@ -82,8 +88,8 @@ export default function DetailView() {
         <div className="detail-text">{sk.text}</div>
         <div className="detail-actions">
           {sk.scope === 'global'
-            ? (state.scope.kind !== 'global' && <button className="btn small" data-skillmove="workspace" onClick={() => actions.moveSkill(sk.name, 'workspace')}>移到当前工作区</button>)
-            : <button className="btn small" data-skillmove="global" onClick={() => actions.moveSkill(sk.name, 'global')}>移到全局</button>}
+            ? (state.scope.kind !== 'global' && <button className="btn small" data-skillmove="workspace" onClick={() => actions.moveSkill(sk.name, 'workspace')}>复制到当前工作区</button>)
+            : <button className="btn small" data-skillmove="global" onClick={() => actions.moveSkill(sk.name, 'global')}>复制到全局</button>}
           {group && <button className="btn small" data-groupitem onClick={() => actions.setGroupItem('skill', sk.name)}>{inGroup ? '从分组移除' : '加入分组'}</button>}
         </div>
       </div>

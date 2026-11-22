@@ -8,6 +8,7 @@ import type {
   Group,
   GroupItem,
   GroupItemKind,
+  McpServer,
   Meta,
   Scope,
   Section,
@@ -35,16 +36,71 @@ export function currentWsId(scope: Scope, _meta: Meta): string | null {
   return scope.kind === 'workspace' ? scope.id ?? null : null
 }
 
+/** 工作区信任：未标记为不可信即视为可信；全局始终可信。 */
+export const isTrustedWorkspace = (meta: Meta, wsId: string | null | undefined): boolean => {
+  if (!wsId) return true
+  const workspace = (meta.workspaces || []).find((w) => w.id === wsId)
+  return !workspace || workspace.trusted !== false
+}
+
+type ScopedDef = { name: string; scope: 'global' | 'workspace'; wsId?: string }
+
+const defScope = (def: ScopedDef): Scope => ({ kind: def.scope, id: def.wsId ?? null })
+
 export function skillVisible(skill: Skill, scope: Scope, meta: Meta): boolean {
   if (skill.scope === 'global') return true
   const ws = currentWsId(scope, meta)
   return !!ws && skill.wsId === ws
 }
 
+export function serverVisible(server: McpServer, scope: Scope, meta: Meta): boolean {
+  if (server.scope === 'global') return true
+  const ws = currentWsId(scope, meta)
+  return !!ws && server.wsId === ws
+}
+
 export function chainFor(scope: Scope, _meta: Meta): Scope[] {
   const out: Scope[] = [{ kind: 'global' }]
   if (scope.kind === 'workspace') out.push(scope)
   return out
+}
+
+/** 在同一名称的多个作用域定义里，取当前链上最具体的一层。 */
+const resolveInChain = <T extends ScopedDef>(defs: T[], state: AppState, name: string | null | undefined): T | undefined => {
+  if (!name) return undefined
+  const chain = chainFor(state.scope, state.meta)
+  for (let i = chain.length - 1; i >= 0; i--) {
+    const hit = defs.find((def) => def.name === name && sameScope(defScope(def), chain[i]))
+    if (hit) return hit
+  }
+  return undefined
+}
+
+export const resolvedSkill = (state: AppState, name: string | null | undefined): Skill | undefined =>
+  resolveInChain(state.skills, state, name)
+
+export const resolvedServer = (state: AppState, name: string | null | undefined): McpServer | undefined =>
+  resolveInChain(state.servers, state, name)
+
+/** 当前作用域可见的定义，同名时工作区覆盖全局，每个名字只保留一条。 */
+export const visibleSkills = (state: AppState): Skill[] => {
+  const chosen = new Map<string, Skill>()
+  for (const skill of state.skills) {
+    if (!skillVisible(skill, state.scope, state.meta)) continue
+    const current = chosen.get(skill.name)
+    if (!current || (current.scope === 'global' && skill.scope === 'workspace')) chosen.set(skill.name, skill)
+  }
+  return state.skills.filter((skill) => chosen.get(skill.name) === skill)
+}
+
+export const visibleServers = (state: AppState): McpServer[] => {
+  const chosen = new Map<string, McpServer>()
+  for (const server of state.servers) {
+    if (!serverVisible(server, state.scope, state.meta)) continue
+    const current = chosen.get(server.name)
+    if (!current || (current.scope === 'global' && server.scope === 'workspace')) chosen.set(server.name, server)
+  }
+  return state.servers.filter((server) => chosen.get(server.name) === server)
 }
 
 export const groupsOf = (groups: Group[], scope: Scope): Group[] =>
@@ -80,12 +136,12 @@ const sectionTokens = (state: AppState, name: string): number => {
 }
 
 const serverTokens = (state: AppState, name: string): number => {
-  const server = state.servers.find((x) => x.name === name)
+  const server = resolvedServer(state, name)
   return server ? server.tokens : 0
 }
 
 const skillTokens = (state: AppState, name: string): number => {
-  const skill = state.skills.find((x) => x.name === name)
+  const skill = resolvedSkill(state, name)
   return skill ? tokenEstimate(skill.text) : 0
 }
 
@@ -99,7 +155,8 @@ export const groupTokens = (group: Pick<Group, 'items'>, state: AppState): numbe
   return total
 }
 
-// 最近含有效分组的层通吃：组内容 + 本层自定义；缺席 = 向上继承，null = 显式不用。
+// 最近一层有映射的层通吃：组内容 + 本层自定义。
+// 键缺席 = 继承上层；值为空串 = 显式不用任何分组（阻断继承）。
 export const winningLayer = (state: AppState): WinningLayer => {
   const chain = chainFor(state.scope, state.meta)
   for (let i = chain.length - 1; i >= 0; i--) {
@@ -107,8 +164,11 @@ export const winningLayer = (state: AppState): WinningLayer => {
     const key = scopeKey(sc)
     if (!(key in state.activeGroup)) continue
     const groupId = state.activeGroup[key]
-    const group = groupId ? state.groups.find((x) => x.id === groupId) ?? null : null
-    if (group && group.items.length) {
+    if (!groupId) {
+      return { sc, group: null, customs: [], inherited: i < chain.length - 1, depth: i }
+    }
+    const group = state.groups.find((x) => x.id === groupId) ?? null
+    if (group) {
       return {
         sc,
         group,
@@ -129,7 +189,7 @@ export const coveredLayers = (state: AppState): CoveredLayers => {
   for (let i = 0; i < winner.depth; i++) {
     const groupId = state.activeGroup[scopeKey(chain[i])]
     const group = groupId ? state.groups.find((x) => x.id === groupId) : null
-    if (group && group.items.length) covered.push({ sc: chain[i], group })
+    if (group) covered.push({ sc: chain[i], group })
   }
   return { winner, covered }
 }
@@ -142,52 +202,32 @@ export const effectiveItems = (state: AppState): EffectiveItems | null => {
   return used
 }
 
-export const effSkillEnabled = (state: AppState, name: string, skipKey?: string): boolean => {
-  const value = walkLayers(state, skipKey, (key) => state.overrides.skill[key]?.[name])
-  if (value !== undefined) return value
-  const skill = state.skills.find((s) => s.name === name)
+export const effSkillEnabled = (state: AppState, name: string, _skipKey?: string): boolean => {
+  const skill = resolvedSkill(state, name)
   return skill ? skill.enabled !== false : true
 }
 
-export const effServerEnabled = (state: AppState, name: string, skipKey?: string): boolean => {
-  const value = walkLayers(state, skipKey, (key) => state.overrides.mcp[key]?.[name])
-  if (value !== undefined) return value
-  const server = state.servers.find((s) => s.name === name)
+export const effServerEnabled = (state: AppState, name: string, _skipKey?: string): boolean => {
+  const server = resolvedServer(state, name)
   return server ? server.enabled !== false : true
 }
 
-export const effToolOn = (state: AppState, server: string, tool: string, skipKey?: string): boolean => {
-  const value = walkLayers(state, skipKey, (key) => state.overrides.tool[key]?.[server]?.[tool])
-  if (value !== undefined) return value
-  const target = state.servers.find((s) => s.name === server)
+export const effToolOn = (state: AppState, server: string, tool: string, _skipKey?: string): boolean => {
+  const target = resolvedServer(state, server)
   const entry = target?.tools.find((t) => t.name === tool)
   return entry ? entry.on !== false : true
 }
 
-const walkLayers = (
-  state: AppState,
-  skipKey: string | undefined,
-  read: (key: string) => boolean | undefined,
-): boolean | undefined => {
-  const chain = chainFor(state.scope, state.meta)
-  for (let i = chain.length - 1; i >= 0; i--) {
-    const key = scopeKey(chain[i])
-    if (key === skipKey) continue
-    const value = read(key)
-    if (value !== undefined) return value
-  }
-  return undefined
-}
-
+/** 只统计生效分组内、且当前可用的服务器上的被关工具。 */
 export const denyCountFor = (state: AppState): number => {
   const used = effectiveItems(state)
+  const names = used ? Array.from(used.mcp) : visibleServers(state).map((server) => server.name)
   let count = 0
-  for (const server of state.servers) {
-    const allowed = used ? used.mcp.has(server.name) : true
+  for (const name of names) {
+    const server = resolvedServer(state, name)
+    if (!server || !effServerEnabled(state, name)) continue
     for (const tool of server.tools) {
-      const on = effToolOn(state, server.name, tool.name)
-      if (!on) count++
-      else if (!allowed) count++
+      if (!effToolOn(state, server.name, tool.name)) count++
     }
   }
   return count
@@ -196,22 +236,21 @@ export const denyCountFor = (state: AppState): number => {
 export const shadowCountFor = (state: AppState): number => {
   const used = effectiveItems(state)
   if (!used) return 0
-  return state.skills.filter((s) => skillVisible(s, state.scope, state.meta) && !used.skill.has(s.name)).length
+  return visibleSkills(state).filter((skill) => !used.skill.has(skill.name)).length
 }
 
 export const filteredSkills = (state: AppState): Skill[] => {
-  const base = state.skills.filter(
-    (s) => (state.showPlugin !== false || !s.bundled) && skillVisible(s, state.scope, state.meta),
-  )
+  const base = visibleSkills(state).filter((skill) => state.showPlugin !== false || !skill.bundled)
   const query = (state.q.skill || '').trim().toLowerCase()
   if (!query) return base
   return base.filter((s) => (s.name + ' ' + s.label + ' ' + s.desc).toLowerCase().indexOf(query) >= 0)
 }
 
-export const filteredServers = (state: AppState): AppState['servers'] => {
+export const filteredServers = (state: AppState): McpServer[] => {
+  const base = visibleServers(state)
   const query = (state.q.mcp || '').trim().toLowerCase()
-  if (!query) return state.servers
-  return state.servers.filter(
+  if (!query) return base
+  return base.filter(
     (s) => (s.name + ' ' + (s.label || '') + ' ' + (s.url || '') + ' ' + (s.command || '')).toLowerCase().indexOf(query) >= 0,
   )
 }
@@ -240,6 +279,7 @@ export const itemsTokens = (items: GroupItem[], state: AppState): number => {
   return total
 }
 
+/** 预算只统计真正会进入上下文的项：停用的技能 / MCP 服务器不计入。 */
 export const budgetBreakdown = (state: AppState): BudgetBreakdown => {
   const winner = winningLayer(state)
   const out: BudgetBreakdown = {
@@ -254,8 +294,8 @@ export const budgetBreakdown = (state: AppState): BudgetBreakdown => {
     for (const item of winner.group.items) {
       out.counts[item.kind] += 1
       if (item.kind === 'section') out.section += sectionTokens(state, item.name)
-      if (item.kind === 'mcp') out.mcp += serverTokens(state, item.name)
-      if (item.kind === 'skill') out.skill += skillTokens(state, item.name)
+      if (item.kind === 'mcp' && effServerEnabled(state, item.name)) out.mcp += serverTokens(state, item.name)
+      if (item.kind === 'skill' && effSkillEnabled(state, item.name)) out.skill += skillTokens(state, item.name)
     }
   }
   for (const custom of winner.customs) out.custom += tokenEstimate(custom.text)
@@ -288,6 +328,11 @@ export const selectors: Selectors = {
   shadowCountFor,
   filteredSkills,
   filteredServers,
+  resolvedSkill,
+  resolvedServer,
+  visibleSkills,
+  visibleServers,
+  isTrustedWorkspace,
   groupSources,
   currentGroup,
   effSkillEnabled,

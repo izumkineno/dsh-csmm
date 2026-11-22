@@ -47,7 +47,7 @@ export default function App() {
         <nav className="col" aria-label="作用域">
           <div className="col-head">作用域 <span className="count">{scopeCount}</span></div>
           <div className="scroll"><ErrorBoundary><ScopeRail /></ErrorBoundary></div>
-          <div className="rail-foot">作用域只有全局与工作区两层。</div>
+          <div className="rail-foot">全局定义可被工作区同名定义覆盖。</div>
         </nav>
         <nav className="col" aria-label="列表"><ErrorBoundary><ItemList /></ErrorBoundary></nav>
         <main className="col" aria-label="编辑"><ErrorBoundary><Editor /></ErrorBoundary></main>

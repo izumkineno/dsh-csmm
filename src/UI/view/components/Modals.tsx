@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState, type ChangeEvent, type InputHTMLAttributes, type ReactNode } from 'react'
-import type { MigrateModal, RawModal, ServerFormModal } from '../../contracts'
+import type { MigrateModal, RawModal, ServerFormModal, WorkspaceTrustModal } from '../../contracts'
 import {
   MCP_NAME_RE,
   buildServerInput,
@@ -42,7 +42,7 @@ function Migrate({ m }: { m: MigrateModal }) {
   const workspaces = state.meta.workspaces
   const ws = selectors.currentWsId(state.scope, state.meta)
   const targets = workspaces.filter((w) => w.id !== ws)
-  const list = state.skills.filter((s) => selectors.skillVisible(s, state.scope, state.meta))
+  const list = selectors.visibleSkills(state)
   const toggle = (name: string) => {
     const i = m.checked.indexOf(name)
     const checked = i < 0 ? m.checked.concat([name]) : m.checked.filter((x) => x !== name)
@@ -85,8 +85,8 @@ function Migrate({ m }: { m: MigrateModal }) {
 }
 
 function ServerForm({ m }: { m: ServerFormModal }) {
-  const { state, actions } = useAppViewModel()
-  const initial = m.editing ? (state.servers.find((s) => s.name === m.editing) ?? null) : null
+  const { state, actions, selectors } = useAppViewModel()
+  const initial = m.editing ? (selectors.resolvedServer(state, m.editing) ?? null) : null
   const editing = initial !== null
   const [form, setForm] = useState<ServerFormState>(() => (editing && initial ? serverFormFrom(initial) : defaultServerForm()))
   const [deletedEnv, setDeletedEnv] = useState<Set<string>>(() => new Set())
@@ -113,8 +113,8 @@ function ServerForm({ m }: { m: ServerFormModal }) {
   const urlText = form.url.trim()
   const urlMissing = form.transport === 'http' && urlText === '' && submitAttempted
   const urlInvalid = form.transport === 'http' && urlText !== '' && !/^https?:\/\//i.test(urlText)
-  const envKeys = editing && initial && Array.isArray(initial.envKeys) ? initial.envKeys.filter((key) => !deletedEnv.has(key)) : []
-  const headerKeys = editing && initial && Array.isArray(initial.headerKeys) ? initial.headerKeys.filter((key) => !deletedHeaders.has(key)) : []
+  const envKeys = editing && initial && Array.isArray(initial.envKeys) ? initial.envKeys.filter((key: string) => !deletedEnv.has(key)) : []
+  const headerKeys = editing && initial && Array.isArray(initial.headerKeys) ? initial.headerKeys.filter((key: string) => !deletedHeaders.has(key)) : []
 
   const submit = () => {
     setSubmitAttempted(true)
@@ -207,7 +207,7 @@ function ServerForm({ m }: { m: ServerFormModal }) {
     fields.push(field('参数（每行一个）', textArea(form.argsText, (value) => set({ argsText: value }), '-y\n@modelcontextprotocol/server-github'), true))
     fields.push(field('环境变量（每行 键=值；已配置的键留空保持不变）',
       secretEditor(envKeys, deletedEnv, setDeletedEnv, form.envText, (value) => set({ envText: value }), 'GITHUB_TOKEN=${GITHUB_TOKEN}', 'env'),
-      true, { text: '值里写 ${NAME} 即读取环境变量 NAME（DSH 只认 !!js 表达式，面板自动格式化成 !!js \'`${process.env.NAME}`\'）；也可以用 !!js 前缀直接写任意 JS 表达式。stdio 服务器的令牌没有单独的认证项——写在这里的环境变量里（例如 GITHUB_TOKEN=…），stdio 子进程只继承这些显式变量。', error: false }))
+      true, { text: '值里写 ${NAME} 即读取环境变量 NAME（DSH 只认 !!js 表达式，面板自动格式化成 !!js \'`${process.env.NAME}`\'）。stdio 服务器的令牌没有单独的认证项——写在这里的环境变量里（例如 GITHUB_TOKEN=…），stdio 子进程只继承这些显式变量。', error: false }))
     fields.push(field('工作目录（留空使用默认）', textInput(form.cwd, (value) => set({ cwd: value }), 'C:/projects/my-mcp-server'), false))
   } else {
     fields.push(field('服务器地址', textInput(form.url, (value) => set({ url: value }), 'https://example.com/mcp'), true,
@@ -235,7 +235,7 @@ function ServerForm({ m }: { m: ServerFormModal }) {
     ), true))
     fields.push(field('请求头（每行 键=值；已配置的键留空保持不变）',
       secretEditor(headerKeys, deletedHeaders, setDeletedHeaders, form.headersText, (value) => set({ headersText: value }), 'Authorization=Bearer ${MCP_TOKEN}', 'headers'),
-      true, { text: '值里写 ${NAME} 即读取环境变量 NAME（DSH 只认 !!js 表达式，面板自动格式化成 !!js \'`${process.env.NAME}`\'）；也可以用 !!js 前缀直接写任意 JS 表达式。', error: false }))
+      true, { text: '值里写 ${NAME} 即读取环境变量 NAME（DSH 只认 !!js 表达式，面板自动格式化成 !!js \'`${process.env.NAME}`\'）。', error: false }))
   }
   fields.push((
     <div className="MCP_field" data-wide="true" key="advanced">
@@ -296,6 +296,25 @@ function ServerForm({ m }: { m: ServerFormModal }) {
   )
 }
 
+function TrustPrompt({ m }: { m: WorkspaceTrustModal }) {
+  const { state, actions } = useAppViewModel()
+  const ws = state.meta.workspaces.find((w) => w.id === m.wsId)
+  return (
+    <>
+      <div className="hint">首次打开这个工作区。它的 <code>.dsh</code> 配置可能包含 MCP 启动命令与本地技能，是否信任并加载？</div>
+      <dl className="meta-grid">
+        <dt>工作区</dt><dd>{ws ? ws.title : m.wsId}</dd>
+        <dt>路径</dt><dd>{ws ? ws.path : '—'}</dd>
+      </dl>
+      <div className="hint">信任只影响是否加载该工作区的配置，不会改变全局配置。你可以随时在作用域栏重新打开。</div>
+      <div className="modal-foot">
+        <button className="btn" data-trust="decline" onClick={() => actions.declineTrust(m.wsId)}>暂不信任</button>
+        <button className="btn primary" data-trust="accept" onClick={() => actions.trustWorkspace(m.wsId)}>信任并加载</button>
+      </div>
+    </>
+  )
+}
+
 function Raw({ m }: { m: RawModal }) {
   const { actions } = useAppViewModel()
   return (
@@ -351,6 +370,7 @@ export default function Modals() {
     migrate: '迁移技能',
     serverForm: m.type === 'serverForm' && m.editing ? '编辑 MCP 服务器' : '添加 MCP 服务器',
     raw: '原始配置',
+    workspaceTrust: '信任此工作区？',
   }
   return (
     <div className="modal-mask" data-modalclose onMouseDown={(e) => { if (e.target === e.currentTarget) actions.closeModal() }}>
@@ -362,6 +382,7 @@ export default function Modals() {
           {m.type === 'migrate' && <Migrate m={m} />}
           {m.type === 'serverForm' && <ServerForm m={m} />}
           {m.type === 'raw' && <Raw m={m} />}
+          {m.type === 'workspaceTrust' && <TrustPrompt m={m} />}
         </div>
       </div>
     </div>

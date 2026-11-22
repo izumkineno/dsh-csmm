@@ -33,6 +33,10 @@ export interface Workspace {
   id: string
   title: string
   path: string
+  /** 陌生工作区在用户确认前处于受限状态；与 VS Code 的工作区信任提示对应。 */
+  trusted: boolean
+  /** 是否对应当前打开的工作区（用于左栏定位）。 */
+  current?: boolean
 }
 
 export type SectionKind = 'section' | 'mcp-section' | 'context'
@@ -79,6 +83,9 @@ export interface ReconnectOptions {
 export interface McpServer {
   name: string
   label: string
+  /** MCP 服务器按作用域定义：工作区同名定义覆盖全局定义。 */
+  scope: 'global' | 'workspace'
+  wsId?: string
   status: ServerStatus
   transport: Transport
   tokens: number
@@ -209,7 +216,13 @@ export interface RawModal {
   text: string
 }
 
-export type ModalState = SkillAddModal | MigrateModal | ServerFormModal | RawModal
+/** 打开陌生工作区时的一次性信任提示。 */
+export interface WorkspaceTrustModal {
+  type: 'workspaceTrust'
+  wsId: string
+}
+
+export type ModalState = SkillAddModal | MigrateModal | ServerFormModal | RawModal | WorkspaceTrustModal
 
 export type ModalPatch = Partial<
   Omit<MigrateModal, 'type'> & Omit<ServerFormModal, 'type'> & Omit<RawModal, 'type'>
@@ -251,6 +264,8 @@ export interface AppState {
   skDelConfirm: string | null
   mcpDelConfirm: string | null
   drafts: Record<string, GroupItem[] | CustomDraft>
+  /** 用户选择「暂不信任」的工作区；本次会话不再重复弹窗。 */
+  trustDeclined: string[]
   modal: ModalState | null
   toasts: ToastItem[]
   meta: Meta
@@ -334,6 +349,12 @@ export interface Selectors {
   shadowCountFor(state: AppState): number
   filteredSkills(state: AppState): Skill[]
   filteredServers(state: AppState): McpServer[]
+  /** 当前作用域链里可用的技能 / MCP 定义；工作区同名定义覆盖全局。 */
+  resolvedSkill(state: AppState, name: string | null | undefined): Skill | undefined
+  resolvedServer(state: AppState, name: string | null | undefined): McpServer | undefined
+  visibleSkills(state: AppState): Skill[]
+  visibleServers(state: AppState): McpServer[]
+  isTrustedWorkspace(meta: Meta, wsId: string | null | undefined): boolean
   groupSources(meta: Meta): string[]
   currentGroup(state: AppState): Group | null
   effSkillEnabled(state: AppState, name: string, skipKey?: string): boolean
@@ -350,6 +371,9 @@ export interface Actions {
   setTab(tab: PageTab): void
   setActive(kind: 'group' | 'custom', id: string | null): void
   setEffectiveGroup(id: string): void
+  /** 删除本层映射，回到「继承上层」。 */
+  inheritGroup(): void
+  /** 显式声明本层不使用任何分组，阻断继承。 */
   setNone(): void
   openDetail(detail: Detail): void
   closeDetail(): void
@@ -399,6 +423,8 @@ export interface Actions {
   saveServer(input: ServerFormInput, editing: string): void
   openRaw(server: McpServer): void
   rawSave(): void
+  trustWorkspace(wsId: string): void
+  declineTrust(wsId: string): void
   removeToast(id: number): void
   runToastUndo(toast: ToastItem): void
   toast(message: string): void

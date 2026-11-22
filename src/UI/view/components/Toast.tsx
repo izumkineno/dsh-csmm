@@ -4,7 +4,7 @@ export default function Toast() {
   const { state, actions } = useAppViewModel()
   if (!state.toasts.length) return null
   return (
-    <div id="toastHost">
+    <div id="toastHost" role="status" aria-live="polite">
       {state.toasts.map((t) => (
         <div className="toast" key={t.id}>
           <span>{t.msg}</span>

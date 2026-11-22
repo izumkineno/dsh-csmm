@@ -25,7 +25,7 @@ function CheckRow(props: {
       <input type="checkbox" data-check="1" data-kind={kind} data-name={name} checked={!!checked}
         disabled={disabled} onChange={onChange} aria-label={label} />
       {icon && <span className="r-ico">{icon}</span>}
-      <span className="c-label">{label}</span>
+      <label className="c-label" onClick={() => { if (!disabled) onChange?.() }}>{label}</label>
       {meta && <span className="muted">{meta}</span>}
     </div>
   )
@@ -45,7 +45,8 @@ export default function GroupEditor({ g }: { g: Group }) {
   const dirty = name !== g.name || JSON.stringify(draft) !== JSON.stringify(g.items)
   const counts: Record<GroupItemKind, number> = { section: 0, mcp: 0, skill: 0 }
   draft.forEach((it) => { if (counts[it.kind] !== undefined) counts[it.kind]++ })
-  const visibleSkills = state.skills.filter((s) => selectors.skillVisible(s, state.scope, state.meta))
+  const visibleSkills = selectors.visibleSkills(state)
+  const visibleServers = selectors.visibleServers(state)
   const sources = selectors.groupSources(state.meta)
   const check = (kind: GroupItemKind, n: string): boolean => selectors.hasItem(draft, kind, n)
   const toggle = (kind: GroupItemKind, n: string) => actions.toggleDraftCheck(g, kind, n)
@@ -61,7 +62,7 @@ export default function GroupEditor({ g }: { g: Group }) {
     return true
   }
   const sectionList = sections.filter((section) => match('section', section.name))
-  const serverList = state.servers.filter((server) => match('mcp', server.name))
+  const serverList = visibleServers.filter((server) => match('mcp', server.name))
   const skillList = visibleSkills.filter((skill) => match('skill', skill.name))
 
   const toggleMany = (kind: GroupItemKind, names: string[], on: boolean) => {
@@ -85,8 +86,8 @@ export default function GroupEditor({ g }: { g: Group }) {
   const [delArm, setDelArm] = useState(false)
   useEffect(() => { setDelArm(false) }, [g.id])
   const effId = state.activeGroup[selectors.scopeKey(g.scope)]
-  const stateLabel = effId === g.id ? '生效中' : effId ? '未生效' : '继承中'
-  const stateClass = effId === g.id ? 'on' : effId ? 'off' : 'inherit'
+  const stateLabel = effId === g.id ? '生效中' : effId === '' ? '本层为空' : '继承中'
+  const stateClass = effId === g.id ? 'on' : effId === '' ? 'off' : 'inherit'
 
   return (
     <>
@@ -142,7 +143,7 @@ export default function GroupEditor({ g }: { g: Group }) {
             <span>提示词段</span>
             <span className="count" id="secCount">{counts.section}/{sections.length}</span>
             <span className="muted">{selectors.groupTokens({ items: draft.filter((it) => it.kind === 'section') }, state)} tok</span>
-            <span className="tag" title="只放行分组列出的段，未列入的不进入提示词">水泄式过滤</span>
+            <span className="tag" title="只放行分组列出的段，未列入的不进入提示词">白名单</span>
             <span className="spacer"></span>
             <button className="btn tiny" onClick={(e) => { e.preventDefault(); toggleMany('section', sectionList.map((s) => s.name), true) }}>全选</button>
             <button className="btn tiny" onClick={(e) => { e.preventDefault(); toggleMany('section', sectionList.map((s) => s.name), false) }}>清空</button>
@@ -169,7 +170,7 @@ export default function GroupEditor({ g }: { g: Group }) {
         <details className="res" open>
           <summary className="res-head">
             <span>MCP 服务器</span>
-            <span className="count" id="mcpCount">{counts.mcp}/{state.servers.length}</span>
+            <span className="count" id="mcpCount">{counts.mcp}/{visibleServers.length}</span>
             <span className="muted">{selectors.groupTokens({ items: draft.filter((it) => it.kind === 'mcp') }, state)} tok</span>
             <span className="tag cat-mcp" title="勾选服务器会同时带上它的配对段与工具">段 + 工具成对</span>
             <span className="spacer"></span>
@@ -222,7 +223,7 @@ export default function GroupEditor({ g }: { g: Group }) {
               <button key={s.name} className="add-chip" data-additem data-kind="section" data-name={s.name}
                 onClick={() => actions.addDraftItem(g, 'section', s.name)}>+ {s.name}</button>
             ))}
-            {state.servers.filter((s) => !check('mcp', s.name) && (!needle || s.name.toLowerCase().includes(needle))).map((s) => (
+            {visibleServers.filter((s) => !check('mcp', s.name) && (!needle || s.name.toLowerCase().includes(needle))).map((s) => (
               <button key={s.name} className="add-chip" data-additem data-kind="mcp" data-name={s.name}
                 onClick={() => actions.addDraftItem(g, 'mcp', s.name)}>+ ⚡{s.name}</button>
             ))}

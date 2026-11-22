@@ -61,13 +61,15 @@ function BudgetCard({ budget }: { budget: BudgetBreakdown }) {
         <span className="budget-title">上下文预算</span>
         <span className="budget-num"><strong>{budget.total.toLocaleString()}</strong> / {Math.round(CONTEXT_BUDGET / 1000)}K tok</span>
       </div>
-      <div className="budget-bar" role="img" aria-label="生效内容构成占比">
+      <div className="budget-bar" role="img" aria-label={'生效内容构成占比，共 ' + budget.total + ' tok'}>
         {SEGMENTS.map((seg) => {
           const value = budget[seg.key]
           if (!value) return null
-          return <span key={seg.key} className={'budget-seg ' + seg.key} style={{ width: (value / Math.max(budget.total, 1)) * 100 + '%' }} title={seg.label + ' ' + value + ' tok'} />
+          return <span key={seg.key} className={'budget-seg ' + seg.key} style={{ width: (value / CONTEXT_BUDGET) * 100 + '%' }} title={seg.label + ' ' + value + ' tok'} />
         })}
         {budget.total === 0 && <span className="budget-seg empty" style={{ width: '100%' }} />}
+        <span className="budget-mark" style={{ left: '70%' }} title="70% 警戒线" />
+        <span className="budget-mark danger" style={{ left: '90%' }} title="90% 危险线" />
       </div>
       <div className="budget-legend">
         {SEGMENTS.map((seg) => (
@@ -99,19 +101,20 @@ function ItemRow(props: {
     return previewRow(it.name, section ? section.text : '', section ? section.tokens : 0, section ? section.source : '提示词段', expanded, onToggle, 'cat-section')
   }
   if (it.kind === 'skill') {
-    const skill = state.skills.find((x) => x.name === it.name)
-    const off = skill && !selectors.effSkillEnabled(state, skill.name)
-    const meta = !skill ? '缺失' : off ? '已停用' : skill.model ? '模型可调用' : '仅用户可用'
+    const skill = selectors.resolvedSkill(state, it.name)
+    const off = !!skill && !selectors.effSkillEnabled(state, skill.name)
+    const meta = !skill ? '缺失' : off ? '已停用 · 不计入预算' : skill.model ? '模型可调用' : '仅用户可用'
     return previewRow(it.name, skill ? skill.text : '', skill ? selectors.tokenEstimate(skill.text) : 0, meta, expanded, onToggle, off || !skill ? 'off' : 'cat-skill')
   }
-  const server = state.servers.find((x) => x.name === it.name)
+  const server = selectors.resolvedServer(state, it.name)
   if (!server) return previewRow('mcp:' + it.name, '', 0, '缺失', expanded, onToggle, 'off')
   const serverOff = !selectors.effServerEnabled(state, server.name)
+  const deny = server.tools.filter((tool) => !selectors.effToolOn(state, server.name, tool.name)).length
   return (
     <div className="pv-mcp">
       {previewRow('mcp:' + server.name, server.instructions, server.tokens, serverOff ? '已停用' : server.transport, expanded, onToggle, serverOff ? 'off' : 'cat-mcp')}
       <details className="pv-tools">
-        <summary>{server.tools.length} 个工具 · {selectors.denyCountFor(state) ? '含 deny' : '全部可用'}</summary>
+        <summary>{server.tools.length} 个工具 · {deny ? deny + ' 个 deny' : '全部可用'}</summary>
         {server.tools.map((tool) => {
           const on = selectors.effToolOn(state, server.name, tool.name)
           return (
@@ -138,12 +141,12 @@ function buildEffectiveText(state: AppState, selectors: Selectors): string {
         if (section) lines.push('\n## ' + section.name + '（' + section.source + '）\n' + section.text)
       }
       if (item.kind === 'skill') {
-        const skill = state.skills.find((x) => x.name === item.name)
-        if (skill) lines.push('\n## 技能：' + skill.name + '\n' + skill.text)
+        const skill = selectors.resolvedSkill(state, item.name)
+        if (skill && selectors.effSkillEnabled(state, skill.name)) lines.push('\n## 技能：' + skill.name + '\n' + skill.text)
       }
       if (item.kind === 'mcp') {
-        const server = state.servers.find((x) => x.name === item.name)
-        if (server) lines.push('\n## MCP：' + server.name + '\n' + server.instructions)
+        const server = selectors.resolvedServer(state, item.name)
+        if (server && selectors.effServerEnabled(state, server.name)) lines.push('\n## MCP：' + server.name + '\n' + server.instructions)
       }
     }
   }
@@ -180,16 +183,16 @@ function buildDiagnostics(state: AppState, selectors: Selectors, actions: Action
       if (item.kind === 'section' && !state.meta.sections.some((x) => x.name === item.name)) {
         out.push({ key: 'missing-section:' + item.name, level: 'error', title: '分组引用了不存在的提示词段', detail: item.name + ' 当前不可用，不会注入。' })
       }
-      if (item.kind === 'skill' && !state.skills.some((x) => x.name === item.name)) {
+      if (item.kind === 'skill' && !selectors.resolvedSkill(state, item.name)) {
         out.push({ key: 'missing-skill:' + item.name, level: 'error', title: '分组引用了不存在的技能', detail: item.name + ' 当前不可用，不会注入。' })
       }
-      if (item.kind === 'mcp' && !state.servers.some((x) => x.name === item.name)) {
+      if (item.kind === 'mcp' && !selectors.resolvedServer(state, item.name)) {
         out.push({ key: 'missing-mcp:' + item.name, level: 'error', title: '分组引用了不存在的 MCP 服务器', detail: item.name + ' 当前不可用，不会注入。' })
       }
     }
     const offServers = group.items
       .filter((item) => item.kind === 'mcp')
-      .map((item) => state.servers.find((server) => server.name === item.name))
+      .map((item) => selectors.resolvedServer(state, item.name))
       .filter((server): server is NonNullable<typeof server> => !!server && !selectors.effServerEnabled(state, server.name))
     if (offServers.length) {
       out.push({
@@ -202,7 +205,7 @@ function buildDiagnostics(state: AppState, selectors: Selectors, actions: Action
     }
     const offSkills = group.items
       .filter((item) => item.kind === 'skill')
-      .map((item) => state.skills.find((skill) => skill.name === item.name))
+      .map((item) => selectors.resolvedSkill(state, item.name))
       .filter((skill): skill is NonNullable<typeof skill> => !!skill && !selectors.effSkillEnabled(state, skill.name))
     if (offSkills.length) {
       out.push({
@@ -215,7 +218,7 @@ function buildDiagnostics(state: AppState, selectors: Selectors, actions: Action
     }
     const downServers = group.items
       .filter((item) => item.kind === 'mcp')
-      .map((item) => state.servers.find((server) => server.name === item.name))
+      .map((item) => selectors.resolvedServer(state, item.name))
       .filter((server): server is NonNullable<typeof server> => !!server && server.status !== 'connected')
     if (downServers.length) {
       out.push({
@@ -253,7 +256,7 @@ function buildDiagnostics(state: AppState, selectors: Selectors, actions: Action
     out.push({
       key: 'covered',
       level: 'info',
-      title: '上层分组已被覆盖',
+      title: '下层分组被本层覆盖',
       detail: covered
         .map(({ sc, group }) => SCOPE_LABEL[sc.kind] + (sc.kind === 'global' ? '' : ' · ' + selectors.scopeTitle(sc, state.meta)) + '「' + group.name + '」')
         .join('；'),
@@ -327,7 +330,7 @@ function InspectorView() {
           </div>
 
           {winner.inherited && group && (
-            <div className="note">当前{SCOPE_LABEL[state.scope.kind]}没有自己的生效分组，继承 {winnerName} 的「{group.name}」。</div>
+            <div className="note">当前作用域没有自己的生效分组，沿用 {winnerName} 的「{group.name}」。</div>
           )}
 
           {group ? (
@@ -366,7 +369,7 @@ function InspectorView() {
 
           {winner.customs.length > 0 && (
             <div className="pv-customs">
-              <div className="pv-kind">本层自定义 <span className="n">{winner.customs.length}</span></div>
+              <div className="pv-kind">自定义提示词 <span className="n">{winner.customs.length}</span> <span className="tag">{SCOPE_LABEL[winner.sc.kind]}</span></div>
               {winner.customs.map((custom) => (
                 <div key={custom.id} className="pv-block">
                   <div className="pv-head">
@@ -384,7 +387,7 @@ function InspectorView() {
 
           {covered.length > 0 && (
             <details className="pv-covered">
-              <summary>被覆盖的上层分组 · {covered.length}</summary>
+              <summary>被本层覆盖的下层分组 · {covered.length}</summary>
               {covered.map(({ sc, group: coveredGroup }) => (
                 <div key={selectors.scopeKey(sc)} className="pv-covered-row">
                   <span>{SCOPE_LABEL[sc.kind]}{sc.kind === 'global' ? '' : ' · ' + selectors.scopeTitle(sc, state.meta)}</span>

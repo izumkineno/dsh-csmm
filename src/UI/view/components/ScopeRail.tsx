@@ -17,12 +17,15 @@ export default function ScopeRail() {
       <div className="rail-sec">工作区 <span className="count">{workspaces.length}</span></div>
       {workspaces.map((w) => {
         const wActive = state.scope.kind === 'workspace' && state.scope.id === w.id
+        const untrusted = w.trusted === false
         return (
           <button key={w.id} className={'scope-item' + (wActive ? ' active' : '')}
             data-scope="workspace" data-id={w.id} title={w.path}
             aria-current={wActive ? 'true' : undefined}
             onClick={() => actions.setScope({ kind: 'workspace', id: w.id })}>
             <span className="ico">▤</span><span className="label">{w.title}<small>{w.path}</small></span>
+            {w.current && <span className="tag tag-current" title="当前工作目录">当前</span>}
+            {untrusted && <span className="tag tag-warn" title="尚未信任此工作区">未信任</span>}
             <span className="badge">{countOf('workspace', w.id)}</span>
           </button>
         )

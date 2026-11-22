@@ -2,7 +2,7 @@ import { useAppViewModel } from '../../viewmodel/useAppViewModel'
 
 export default function SkillPane() {
   const { state, actions, selectors } = useAppViewModel()
-  const sk = state.skills.find((s) => s.name === state.sel.skill)
+  const sk = selectors.resolvedSkill(state, state.sel.skill)
   if (!sk) {
     return (
       <>
@@ -19,8 +19,8 @@ export default function SkillPane() {
   const group = selectors.currentGroup(state)
   const inGroup = !!group && selectors.hasItem(group.items, 'skill', sk.name)
   const off = !selectors.effSkillEnabled(state, sk.name)
-  const covered = state.scope.kind !== 'global' &&
-    ((state.overrides.skill[selectors.scopeKey(state.scope)] || {})[sk.name] !== undefined)
+  const local = sk.scope === 'workspace' && state.scope.kind === 'workspace'
+  const inherited = sk.scope === 'global' && state.scope.kind === 'workspace'
   return (
     <>
       <div className="editor-head">
@@ -29,8 +29,10 @@ export default function SkillPane() {
         </div>
         <div className="title-row"><strong>{sk.label || sk.name}</strong><span className="muted">/ {sk.name}</span>
           {sk.bundled && <span className="tag">插件</span>}
+          <span className="tag" title={sk.scope === 'global' ? '定义在全局' : '定义在当前工作区'}>{sk.scope === 'global' ? '全局定义' : '工作区定义'}</span>
+          {local && <span className="tag" title="本层定义，覆盖同名全局技能">本层覆盖</span>}
+          {inherited && <span className="tag" title="继承自全局，本层可停用或复制覆盖">继承自全局</span>}
           {off && <span className="tag">已停用</span>}
-          {covered && <span className="tag" title="本层显式设置，覆盖下层">本层覆盖</span>}
           <span className={'chip ' + (inGroup ? 'chip-on' : '')}
             title={inGroup ? '已列入当前生效分组' : '未列入当前生效分组'}>{inGroup ? '本组' : '未入组'}</span>
         </div>
@@ -48,17 +50,17 @@ export default function SkillPane() {
         <div className="detail-actions">
           <button className="btn small" data-sktoggle disabled={!!sk.bundled} onClick={() => actions.toggleSkill(sk.name)}>{off ? '启用' : '停用'}</button>
           {sk.scope === 'global'
-            ? (state.scope.kind !== 'global' && <button className="btn small" data-skillmove="workspace" onClick={() => actions.moveSkill(sk.name, 'workspace')}>移到当前工作区</button>)
-            : <button className="btn small" data-skillmove="global" onClick={() => actions.moveSkill(sk.name, 'global')}>移到全局</button>}
+            ? (state.scope.kind !== 'global' && <button className="btn small" data-skillmove="workspace" onClick={() => actions.moveSkill(sk.name, 'workspace')}>复制到当前工作区</button>)
+            : <button className="btn small" data-skillmove="global" onClick={() => actions.moveSkill(sk.name, 'global')}>复制到全局</button>}
           <button className="btn small" data-groupitem onClick={() => actions.setGroupItem('skill', sk.name)}>{inGroup ? '从分组移除' : '加入分组'}</button>
           <button className="btn small" data-skopen onClick={() => actions.openSkillDir()}>打开目录</button>
           {state.skDelConfirm === sk.name
-            ? <><button className="btn danger small" data-skdel="yes" onClick={() => actions.deleteSkill(sk.name)}>确认删除</button>
+            ? <><button className="btn danger small" data-skdel="yes" onClick={() => actions.deleteSkill(sk.name)}>{local ? '确认删除' : '确认停用'}</button>
                 <button className="btn small" onClick={() => actions.setSkDelConfirm(null)}>取消</button></>
-            : <button className="btn small" data-skdel onClick={() => actions.setSkDelConfirm(sk.name)}>删除</button>}
+            : <button className="btn small" data-skdel onClick={() => actions.setSkDelConfirm(sk.name)}>{local ? '删除' : '在本层停用'}</button>}
         </div>
       </div>
-      <div className="editor-foot"><span className="hint">启用状态按层覆盖：本层修改影响本层及上层；删除可从 toast 撤销。插件自带技能不可停用/删除。</span></div>
+      <div className="editor-foot"><span className="hint">技能定义按作用域保存：工作区同名定义覆盖全局，其他工作区不受影响。停用只影响当前作用域；删除工作区定义后恢复继承全局。</span></div>
     </>
   )
 }

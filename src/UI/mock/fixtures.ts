@@ -9,8 +9,8 @@ import type {
 } from '../contracts'
 
 export const workspaces: Workspace[] = [
-  { id: '6d5507b0-80fb-4165-bea5-989dd24639b8', title: 'dsh-context-manager', path: 'E:\\Code\\_dev_skill_mcp\\dsh-context-manager' },
-  { id: 'fa450902-33b0-47e3-83fa-53f8cdf22a20', title: '_TEMP', path: 'E:\\Code\\_TEMP' },
+  { id: '6d5507b0-80fb-4165-bea5-989dd24639b8', title: 'dsh-context-manager', trusted: true, current: true, path: 'E:\\Code\\_dev_skill_mcp\\dsh-context-manager' },
+  { id: 'fa450902-33b0-47e3-83fa-53f8cdf22a20', title: '_TEMP', trusted: false, path: 'E:\\Code\\_TEMP' },
 ]
 
 // 段是静态清单（界面不修改它）。
@@ -92,7 +92,7 @@ export function makeServers(): McpServer[] {
     (sections.find((s) => s.name === 'mcp:' + name) || {}).text || ''
   return [
     {
-      name: 'omd-state', label: 'oh-my-dsh 状态', status: 'connected', transport: 'stdio', tokens: 38, auth: 'none',
+      name: 'omd-state', label: 'oh-my-dsh 状态', scope: 'global', status: 'connected', transport: 'stdio', tokens: 38, auth: 'none',
       command: 'node dist/mcp-server.js --stdio',
       envKeys: ['MCP_LOG_LEVEL'],
       env: { MCP_LOG_LEVEL: 'debug' },
@@ -105,7 +105,7 @@ export function makeServers(): McpServer[] {
       ],
     },
     {
-      name: 'github', label: 'GitHub', status: 'connected', transport: 'http', tokens: 96, auth: 'oauth', oauth: true,
+      name: 'github', label: 'GitHub', scope: 'global', status: 'connected', transport: 'http', tokens: 96, auth: 'oauth', oauth: true,
       url: 'https://api.github.com/mcp',
       headerKeys: ['Authorization'],
       headers: { Authorization: 'Bearer ghp_demo' },
@@ -117,8 +117,15 @@ export function makeServers(): McpServer[] {
       ],
     },
     {
-      name: 'figma', label: 'Figma', status: 'disconnected', transport: 'http', tokens: 0, auth: 'none',
+      name: 'figma', label: 'Figma', scope: 'global', status: 'disconnected', transport: 'http', tokens: 0, auth: 'none',
       url: 'https://mcp.figma.com/mcp', instructions: '', tools: [],
+    },
+    {
+      name: 'repo-audit', label: '仓库审计', scope: 'workspace', wsId: workspaces[0].id,
+      status: 'connected', transport: 'stdio', tokens: 24, auth: 'none',
+      command: 'node scripts/audit-mcp.mjs',
+      instructions: '本仓库专用：列出未跟踪文件、构建残留与过期 worktree。',
+      tools: [{ name: 'list_stale', on: true }, { name: 'preview_cleanup', on: false }],
     },
   ]
 }
@@ -144,7 +151,7 @@ export function makeGroups(): Group[] {
       items: [
         { kind: 'section', name: 'tool:read' }, { kind: 'section', name: 'tool:bash' },
         { kind: 'section', name: 'tool:workflow' }, { kind: 'skill', name: 'repo-conventions' },
-        { kind: 'skill', name: 'web-research' }, { kind: 'mcp', name: 'github' },
+        { kind: 'skill', name: 'web-research' }, { kind: 'mcp', name: 'github' }, { kind: 'mcp', name: 'repo-audit' },
       ],
     },
   ]

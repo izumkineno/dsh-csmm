@@ -2,7 +2,7 @@ import { useAppViewModel } from '../../viewmodel/useAppViewModel'
 
 export default function McpPane() {
   const { state, actions, selectors } = useAppViewModel()
-  const srv = state.servers.find((s) => s.name === state.sel.mcp)
+  const srv = selectors.resolvedServer(state, state.sel.mcp)
   if (!srv) {
     return (
       <>
@@ -19,8 +19,8 @@ export default function McpPane() {
   const group = selectors.currentGroup(state)
   const inGroup = !!group && selectors.hasItem(group.items, 'mcp', srv.name)
   const on = srv.status === 'connected' && selectors.effServerEnabled(state, srv.name)
-  const srvCovered = state.scope.kind !== 'global' &&
-    ((state.overrides.mcp[selectors.scopeKey(state.scope)] || {})[srv.name] !== undefined)
+  const local = srv.scope === 'workspace' && state.scope.kind === 'workspace'
+  const inherited = srv.scope === 'global' && state.scope.kind === 'workspace'
   const q = (srv.toolQ || '').trim().toLowerCase()
   const tools = srv.tools.filter((t) => !q || t.name.toLowerCase().indexOf(q) >= 0)
   const disabledCount = srv.tools.filter((t) => !selectors.effToolOn(state, srv.name, t.name)).length
@@ -35,7 +35,9 @@ export default function McpPane() {
             {on ? 'connected' : (!selectors.effServerEnabled(state, srv.name) ? '已停用' : srv.status)}
           </span>
           <span className="chip">{srv.transport}</span>
-          {srvCovered && <span className="tag" title="本层显式设置，覆盖下层">本层覆盖</span>}
+          <span className="tag" title={srv.scope === 'global' ? '定义在全局' : '定义在当前工作区'}>{srv.scope === 'global' ? '全局定义' : '工作区定义'}</span>
+          {local && <span className="tag" title="本层定义，覆盖同名全局服务器">本层覆盖</span>}
+          {inherited && <span className="tag" title="继承自全局，本层可停用或复制覆盖">继承自全局</span>}
           {srv.oauth && <span className="chip">oauth</span>}
         </div>
       </div>
@@ -82,12 +84,12 @@ export default function McpPane() {
           <button className="btn small" data-restart onClick={() => actions.restartConnection()}>重启连接</button>
           {group && <button className="btn small" data-groupitem onClick={() => actions.setGroupItem('mcp', srv.name)}>{inGroup ? '从分组移除' : '加入分组'}</button>}
           {state.mcpDelConfirm === srv.name
-            ? <><button className="btn danger small" data-mcpdel="yes" onClick={() => actions.deleteMcp(srv.name)}>确认删除</button>
+            ? <><button className="btn danger small" data-mcpdel="yes" onClick={() => actions.deleteMcp(srv.name)}>{local ? '确认删除' : '确认停用'}</button>
                 <button className="btn small" onClick={() => actions.setMcpDelConfirm(null)}>取消</button></>
-            : <button className="btn small" data-mcpdel onClick={() => actions.setMcpDelConfirm(srv.name)}>删除</button>}
+            : <button className="btn small" data-mcpdel onClick={() => actions.setMcpDelConfirm(srv.name)}>{local ? '删除' : '在本层停用'}</button>}
         </div>
       </div>
-      <div className="editor-foot"><span className="hint">工具 deny 与「停用服务器」不同：前者只关单个工具，后者让整组 mcp__ 工具定义消失。开关按层覆盖，本层修改不影响下层。</span></div>
+      <div className="editor-foot"><span className="hint">MCP 配置按作用域保存：工作区同名定义覆盖全局，其他工作区不受影响。工具 deny 与「停用服务器」不同：前者只关单个工具，后者让整组 mcp__ 工具定义消失。</span></div>
     </>
   )
 }

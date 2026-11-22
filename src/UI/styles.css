@@ -428,3 +428,11 @@ details.res:not([open]) > summary { border-bottom: 0; }
   .MCP_form { grid-template-columns: minmax(0, 1fr); }
 }
 
+
+/* ===== 作用域覆盖与预算刻度（m01442 修复补充）===== */
+.i-on { font-size: 10.5px; color: var(--ok); border: 1px solid color-mix(in oklab, var(--ok) 40%, var(--line)); border-radius: 999px; padding: 0 6px; line-height: 16px; white-space: nowrap; }
+.tag-current { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 45%, var(--line)); background: var(--accent-soft); }
+.tag-warn { color: var(--warn); border-color: color-mix(in oklab, var(--warn) 45%, var(--line)); }
+.budget-bar { position: relative; }
+.budget-mark { position: absolute; top: -2px; bottom: -2px; width: 1px; background: color-mix(in oklab, var(--warn) 60%, transparent); pointer-events: none; }
+.budget-mark.danger { background: color-mix(in oklab, var(--danger) 65%, transparent); }

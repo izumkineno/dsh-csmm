@@ -19,7 +19,7 @@ import type {
   Skill,
   ToastItem,
 } from '../contracts'
-import { selectors, scopeKey } from '../model/selectors'
+import { resolvedServer, resolvedSkill, sameScope, scopeKey, selectors } from '../model/selectors'
 
 const ViewModelContext = createContext<AppViewModel | null>(null)
 
@@ -49,6 +49,7 @@ function makeInitialState(bootstrap: Bootstrap): AppState {
     skDelConfirm: null,
     mcpDelConfirm: null,
     drafts: {},
+    trustDeclined: [],
     modal: null,
     toasts: [],
     meta: {
@@ -89,10 +90,18 @@ function cloneState(prev: AppState): AppState {
     drafts: Object.fromEntries(
       Object.entries(prev.drafts).map(([k, v]) => [k, Array.isArray(v) ? v.map((it) => ({ ...it })) : { ...v }]),
     ) as AppState['drafts'],
+    trustDeclined: [...prev.trustDeclined],
     modal: prev.modal ? ({ ...prev.modal } as ModalState) : null,
     toasts: [...prev.toasts],
   }
 }
+
+type ScopedDef = { name: string; scope: 'global' | 'workspace'; wsId?: string }
+
+const copyGroups = (groups: Group[]): Group[] =>
+  groups.map((g) => ({ ...g, scope: { ...g.scope }, items: g.items.map((it) => ({ ...it })) }))
+
+const copyServer = (server: McpServer): McpServer => ({ ...server, tools: server.tools.map((t) => ({ ...t })) })
 
 export function AppViewModelProvider({ host, children }: { host: HostPort; children: ReactNode }) {
   const [state, setState] = useState<AppState>(() => makeInitialState(host.bootstrap()))
@@ -107,7 +116,7 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
   }, [])
 
   const actions = useMemo<Actions>(() => {
-    const pushToast = (s: AppState, msg: string, label?: string, fn?: () => void, ttl = 1600): number => {
+    const pushToast = (s: AppState, msg: string, label?: string, fn?: () => void, ttl = 3000): number => {
       const id = ++seq.current
       s.toasts.push({ id, msg, undoLabel: label, undo: fn })
       setTimeout(() => mutate((p) => { p.toasts = p.toasts.filter((t) => t.id !== id) }), ttl)
@@ -115,9 +124,43 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
     }
     const toast = (msg: string) => mutate((s) => { pushToast(s, msg) })
 
-    const findGroup = (s: AppState, id: string): Group | null => s.groups.find((g) => g.id === id) ?? null
-    const findSkill = (s: AppState, name: string): Skill | null => s.skills.find((x) => x.name === name) ?? null
-    const findServer = (s: AppState, name: string): McpServer | null => s.servers.find((x) => x.name === name) ?? null
+    const findGroup = (s: AppState, id: string | undefined): Group | null =>
+      id ? s.groups.find((g) => g.id === id) ?? null : null
+    const groupInScope = (s: AppState, id: string | undefined): Group | null => {
+      const group = findGroup(s, id)
+      return group && sameScope(group.scope, s.scope) ? group : null
+    }
+    /** 当前作用域自己的定义；工作区作用域只认 wsId 匹配的工作区定义。 */
+    const currentDef = <T extends ScopedDef>(list: T[], s: AppState, name: string): T | null => {
+      const ws = s.scope.kind === 'workspace' ? s.scope.id ?? null : null
+      return list.find((x) => x.name === name && (ws
+        ? x.scope === 'workspace' && x.wsId === ws
+        : x.scope === 'global')) ?? null
+    }
+    /** 解析当前作用域链上最终生效的定义（工作区同名覆盖全局）。 */
+    const resolveSkill = (s: AppState, name: string): Skill | null => resolvedSkill(s, name) ?? null
+    const resolveServer = (s: AppState, name: string): McpServer | null => resolvedServer(s, name) ?? null
+    /** 写操作先落到当前作用域：工作区没有同名定义时，从全局定义复制一份覆盖。 */
+    const ensureSkill = (s: AppState, name: string): Skill | null => {
+      const local = currentDef(s.skills, s, name)
+      if (local) return local
+      const base = resolveSkill(s, name)
+      if (!base) return null
+      if (s.scope.kind === 'global') return base
+      const copy: Skill = { ...base, scope: 'workspace', wsId: s.scope.id ?? undefined }
+      s.skills.push(copy)
+      return copy
+    }
+    const ensureServer = (s: AppState, name: string): McpServer | null => {
+      const local = currentDef(s.servers, s, name)
+      if (local) return local
+      const base = resolveServer(s, name)
+      if (!base) return null
+      if (s.scope.kind === 'global') return base
+      const copy: McpServer = { ...copyServer(base), scope: 'workspace', wsId: s.scope.id ?? undefined }
+      s.servers.push(copy)
+      return copy
+    }
     const mergeSecrets = (base: Record<string, string> | undefined, patch: Record<string, string | null>): Record<string, string> => {
       const out = { ...(base || {}) }
       for (const [key, value] of Object.entries(patch)) {
@@ -126,7 +169,32 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
       }
       return out
     }
-    const currentGroupOf = (s: AppState): Group | null => findGroup(s, s.activeGroup[scopeKey(s.scope)])
+    const currentGroupOf = (s: AppState): Group | null => groupInScope(s, s.activeGroup[scopeKey(s.scope)])
+    const removeGroupRefs = (s: AppState, kind: GroupItemKind, name: string, scope: Scope | null): void => {
+      for (const group of s.groups) {
+        if (scope && !sameScope(group.scope, scope)) continue
+        group.items = group.items.filter((it) => !(it.kind === kind && it.name === name))
+      }
+    }
+    const uniqueGroupName = (s: AppState): string => {
+      let n = selectors.groupsOf(s.groups, s.scope).length + 1
+      const names = new Set(selectors.groupsOf(s.groups, s.scope).map((g) => g.name))
+      while (names.has('分组 ' + n)) n += 1
+      return '分组 ' + n
+    }
+    const mergeIntoGroup = (s: AppState, group: Group, kind: GroupItemKind, name: string, add: boolean): void => {
+      const draftKey = selectors.draftId(group)
+      const draft = Array.isArray(s.drafts[draftKey]) ? (s.drafts[draftKey] as GroupItem[]) : null
+      const target = draft || group.items
+      const exists = selectors.hasItem(target, kind, name)
+      if (add && !exists) target.push({ kind, name })
+      if (!add && exists) {
+        const next = target.filter((it) => !(it.kind === kind && it.name === name))
+        if (draft) s.drafts[draftKey] = next
+        else group.items = next
+      }
+      if (!draft) s.saved[group.id] = JSON.stringify(group.items)
+    }
 
     const ensureDraftItems = (s: AppState, group: Group): GroupItem[] => {
       const key = selectors.draftId(group)
@@ -142,11 +210,17 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
       // ---- 导航 ----
       setScope(scope) {
         mutate((s) => {
-          s.scope = scope
+          s.scope = { ...scope }
           s.detail = null
           s.sel = { skill: null, mcp: null }
           const gid = s.activeGroup[scopeKey(scope)]
-          s.active = { kind: 'group', id: gid && s.groups.some((g) => g.id === gid) ? gid : null }
+          s.active = { kind: 'group', id: gid && s.groups.some((g) => g.id === gid && sameScope(g.scope, scope)) ? gid : null }
+          if (scope.kind === 'workspace' && scope.id) {
+            const ws = s.meta.workspaces.find((w) => w.id === scope.id)
+            if (ws && ws.trusted === false && !s.trustDeclined.includes(ws.id) && !s.modal) {
+              s.modal = { type: 'workspaceTrust', wsId: ws.id }
+            }
+          }
         })
       },
       setTab(tab: PageTab) {
@@ -163,22 +237,38 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
           const g = findGroup(s, id)
           if (!g) return
           const k = scopeKey(g.scope)
-          const prev = s.activeGroup[k] || null
-          if (prev === id) return
+          const prev = s.activeGroup[k] ?? ''
+          // 先把尚未保存的分组草稿落盘，避免「设为生效」后预览仍是旧内容。
+          const draftKey = selectors.draftId(g)
+          if (Array.isArray(s.drafts[draftKey])) {
+            g.items = (s.drafts[draftKey] as GroupItem[]).map((it) => ({ kind: it.kind, name: it.name }))
+            s.saved[g.id] = JSON.stringify(g.items)
+            delete s.drafts[draftKey]
+          }
           s.activeGroup[k] = id
           s.active = { kind: 'group', id }
           s.detail = null
-          pushToast(s, '已设为生效分组：' + (g.name || '未命名分组'), '撤销', () => mutate((p) => {
+          pushToast(s, '已保存并设为生效：' + (g.name || '未命名分组'), '撤销', () => mutate((p) => {
             if (prev) p.activeGroup[k] = prev
             else delete p.activeGroup[k]
           }), 6000)
         })
       },
-      setNone() {
+      inheritGroup() {
         mutate((s) => {
-          delete s.activeGroup[scopeKey(s.scope)]
+          const key = scopeKey(s.scope)
+          delete s.activeGroup[key]
           s.active = { kind: 'group', id: null }
           s.detail = null
+          pushToast(s, '已恢复继承（沿用下层分组）')
+        })
+      },
+      setNone() {
+        mutate((s) => {
+          s.activeGroup[scopeKey(s.scope)] = ''
+          s.active = { kind: 'group', id: null }
+          s.detail = null
+          pushToast(s, '本层已声明不使用分组（阻断继承）')
         })
       },
       openDetail(detail) { mutate((s) => { s.detail = detail }) },
@@ -189,8 +279,7 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
       // ---- 列表栏 ----
       newGroup() {
         mutate((s) => {
-          const n = selectors.groupsOf(s.groups, s.scope).length + 1
-          const g: Group = { id: 'g' + Date.now(), name: '分组 ' + n, scope: { ...s.scope }, enabled: true, items: [] }
+          const g: Group = { id: 'g' + Date.now(), name: uniqueGroupName(s), scope: { ...s.scope }, enabled: true, items: [] }
           s.groups.push(g)
           s.active = { kind: 'group', id: g.id }
           s.detail = null
@@ -208,7 +297,7 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
       },
       setQuery(field, value) { mutate((s) => { s.q[field] = value }) },
       setToolQuery(name, value) {
-        mutate((s) => { const srv = findServer(s, name); if (srv) srv.toolQ = value })
+        mutate((s) => { const srv = ensureServer(s, name); if (srv) srv.toolQ = value })
       },
       toggleSkillCheck(name) {
         mutate((s) => {
@@ -246,8 +335,8 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
           target.items = draft.map((it) => ({ kind: it.kind, name: it.name }))
           s.saved[target.id] = JSON.stringify(target.items)
           delete s.drafts[k]
+          pushToast(s, '分组已保存')
         })
-        toast('分组已保存')
       },
       revertGroup(group) {
         mutate((s) => {
@@ -267,8 +356,8 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
           target.text = text
           s.saved[target.id] = JSON.stringify(target.text)
           delete s.drafts['custom:' + target.id]
+          pushToast(s, '已保存')
         })
-        toast('已保存')
       },
       revertCustom(custom) {
         mutate((s) => {
@@ -312,90 +401,110 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
         mutate((s) => {
           const g = currentGroupOf(s)
           if (!g) { pushToast(s, '当前作用域没有启用的分组'); return }
-          const added = !selectors.hasItem(g.items, kind, name)
-          if (added) g.items.push({ kind, name })
-          else g.items = g.items.filter((it) => !(it.kind === kind && it.name === name))
-          s.saved[g.id] = JSON.stringify(g.items)
-          delete s.drafts[selectors.draftId(g)]
-          pushToast(s, added ? '已加入分组' : '已从分组移除')
+          const draftKey = selectors.draftId(g)
+          const hasDraft = Array.isArray(s.drafts[draftKey])
+          const target = hasDraft ? (s.drafts[draftKey] as GroupItem[]) : g.items
+          const added = !selectors.hasItem(target, kind, name)
+          if (added) {
+            if (hasDraft) (s.drafts[draftKey] as GroupItem[]).push({ kind, name })
+            else g.items.push({ kind, name })
+          } else if (hasDraft) {
+            s.drafts[draftKey] = (s.drafts[draftKey] as GroupItem[]).filter((it) => !(it.kind === kind && it.name === name))
+          } else {
+            g.items = g.items.filter((it) => !(it.kind === kind && it.name === name))
+          }
+          if (!hasDraft) s.saved[g.id] = JSON.stringify(g.items)
+          pushToast(s, added ? '已加入当前分组' : '已从当前分组移除')
         })
       },
       addSkillsToGroup(names) {
         mutate((s) => {
           const g = currentGroupOf(s)
           if (!g) { pushToast(s, '当前作用域没有启用的分组'); return }
+          const draftKey = selectors.draftId(g)
+          const hasDraft = Array.isArray(s.drafts[draftKey])
+          const target = hasDraft ? (s.drafts[draftKey] as GroupItem[]) : g.items
           let added = 0
           ;(names || []).forEach((n) => {
-            if (!selectors.hasItem(g.items, 'skill', n)) {
-              g.items.push({ kind: 'skill', name: n })
-              added += 1
-            }
+            if (!selectors.hasItem(target, 'skill', n)) { target.push({ kind: 'skill', name: n }); added += 1 }
           })
-          s.saved[g.id] = JSON.stringify(g.items)
-          delete s.drafts[selectors.draftId(g)]
-          pushToast(s, added ? '已加入分组 ' + added + ' 项' : '所选技能已在分组中')
+          if (!hasDraft) s.saved[g.id] = JSON.stringify(g.items)
+          pushToast(s, added
+            ? '已加入分组 ' + added + ' 项' + (hasDraft ? '（有未保存更改）' : '')
+            : '所选技能已在分组中')
         })
       },
 
       // ---- 技能管理 ----
       toggleSkill(name) {
         mutate((s) => {
-          if (s.scope.kind === 'global') {
-            const sk = findSkill(s, name)
-            if (sk) sk.enabled = sk.enabled === false
-          } else {
-            const k = scopeKey(s.scope)
-            const next = !selectors.effSkillEnabled(s, name)
-            if (next === selectors.effSkillEnabled(s, name, k)) {
-              if (s.overrides.skill[k]) delete s.overrides.skill[k][name]
-            } else {
-              s.overrides.skill[k] = s.overrides.skill[k] || {}
-              s.overrides.skill[k][name] = next
-            }
-          }
-        })
-        mutate((s) => {
-          const sk = findSkill(s, name)
-          if (sk) pushToast(s, (selectors.effSkillEnabled(s, name) ? '已启用 ' : '已停用 ') + name)
+          const sk = ensureSkill(s, name)
+          if (!sk) return
+          sk.enabled = sk.enabled === false
+          pushToast(s, (sk.enabled === false ? '已停用 ' : '已启用 ') + name
+            + (sk.scope === 'workspace' ? '（当前工作区）' : '（全局）'))
         })
       },
       setSkDelConfirm(name) { mutate((s) => { s.skDelConfirm = name }) },
       deleteSkill(name) {
         mutate((s) => {
-          const idx = s.skills.findIndex((x) => x.name === name)
-          if (idx < 0) return
+          const local = currentDef(s.skills, s, name)
+          const snapshot = copyGroups(s.groups)
+          if (!local) {
+            const resolved = resolveSkill(s, name)
+            if (!resolved) return
+            if (s.scope.kind === 'workspace') {
+              const copy = ensureSkill(s, name)
+              if (!copy) return
+              copy.enabled = false
+              s.skDelConfirm = null
+              pushToast(s, '已在本工作区停用 ' + name + '（全局定义仍保留）')
+              return
+            }
+            // 全局定义缺失时不再兜底。
+            s.skDelConfirm = null
+            return
+          }
+          const idx = s.skills.findIndex((x) => x === local)
           const removed = s.skills.splice(idx, 1)[0]
+          removeGroupRefs(s, 'skill', name, s.scope)
           s.skDelConfirm = null
           s.skillSel = s.skillSel.filter((n) => n !== name)
           if (s.sel.skill === name) {
-            const vis = s.skills.filter((x) => selectors.skillVisible(x, s.scope, s.meta))
+            const vis = selectors.visibleSkills(s)
             s.sel.skill = vis.length ? vis[0].name : null
           }
-          pushToast(s, '已删除 ' + name, '撤销', () => mutate((p) => {
+          pushToast(s, '已删除 ' + name + (local.scope === 'workspace' ? '（当前工作区覆盖）' : '（全局定义）'), '撤销', () => mutate((p) => {
             p.skills.splice(Math.min(idx, p.skills.length), 0, { ...removed })
+            p.groups = copyGroups(snapshot)
             p.sel.skill = name
           }), 6000)
         })
       },
       moveSkill(name, target) {
         mutate((s) => {
-          const sk = findSkill(s, name)
-          if (!sk) return
+          const local = currentDef(s.skills, s, name)
+          const base = local || resolveSkill(s, name)
+          if (!base) return
+          const wsId = s.scope.kind === 'workspace' ? s.scope.id ?? undefined : s.meta.workspaces[0]?.id
           if (target === 'global') {
-            sk.scope = 'global'
-            delete sk.wsId
+            if (s.skills.some((x) => x.name === name && x.scope === 'global')) { pushToast(s, name + ' 已在全局定义中'); return }
+            s.skills.push({ ...base, scope: 'global', wsId: undefined })
+            pushToast(s, '已复制到全局：' + name)
           } else {
-            sk.scope = 'workspace'
-            sk.wsId = selectors.currentWsId(s.scope, s.meta) || s.meta.workspaces[0].id
+            if (s.skills.some((x) => x.name === name && x.scope === 'workspace' && x.wsId === wsId)) {
+              pushToast(s, name + ' 已在当前工作区定义中')
+              return
+            }
+            s.skills.push({ ...base, scope: 'workspace', wsId })
+            pushToast(s, '已复制到当前工作区：' + name)
           }
-          pushToast(s, '已移动 ' + name)
         })
       },
       openSkillDir() { mutate((s) => { pushToast(s, s.copy.skillDir) }) },
       addSkillsFromFiles(files, fromFolder) {
         mutate((s) => {
           const scope = s.scope
-          const ws = selectors.currentWsId(scope, s.meta) || (s.meta.workspaces[0] && s.meta.workspaces[0].id)
           const names: string[] = []
           const list = Array.from(files || [])
           if (fromFolder) {
@@ -417,20 +526,21 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
           let skipped = 0
           names.forEach((raw) => {
             const name = raw.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
-            if (!name || s.skills.some((x) => x.name === name)) { skipped += 1; return }
+            if (!name || currentDef(s.skills, s, name)) { skipped += 1; return }
             s.skills.push({
               name, label: raw, scope: scope.kind === 'global' ? 'global' : 'workspace',
-              wsId: scope.kind === 'workspace' ? scope.id ?? undefined : (selectors.currentWsId(scope, s.meta) || ws),
+              wsId: scope.kind === 'workspace' ? scope.id ?? undefined : undefined,
               bytes: 1200, model: true, user: true, enabled: true,
               desc: s.copy.newSkillDesc, text: s.copy.newSkillText,
             })
             added += 1
           })
           if (added) {
-            s.sel.skill = s.skills[s.skills.length - 1].name
+            const vis = selectors.visibleSkills(s)
+            s.sel.skill = vis.length ? vis[vis.length - 1].name : null
             pushToast(s, '已添加 ' + added + ' 个技能到' + (scope.kind === 'global' ? '全局' : '当前工作区') + (skipped ? '，跳过 ' + skipped + ' 个' : ''))
           } else {
-            pushToast(s, skipped ? '没有可添加的技能（重名或格式不支持）' : '没有选中文件')
+            pushToast(s, skipped ? '没有可添加的技能（当前作用域已有同名定义）' : '没有选中文件')
           }
         })
       },
@@ -439,49 +549,31 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
       // ---- MCP 管理 ----
       toggleTool(serverName, toolName, on) {
         mutate((s) => {
-          const srv = findServer(s, serverName)
+          const srv = ensureServer(s, serverName)
           if (!srv) return
-          if (s.scope.kind === 'global') {
-            const t = srv.tools.find((x) => x.name === toolName)
-            if (t) t.on = on
-          } else {
-            const k = scopeKey(s.scope)
-            s.overrides.tool[k] = s.overrides.tool[k] || {}
-            s.overrides.tool[k][serverName] = s.overrides.tool[k][serverName] || {}
-            if (on === selectors.effToolOn(s, serverName, toolName, k)) {
-              delete s.overrides.tool[k][serverName][toolName]
-              if (!Object.keys(s.overrides.tool[k][serverName]).length) delete s.overrides.tool[k][serverName]
-              if (!Object.keys(s.overrides.tool[k]).length) delete s.overrides.tool[k]
-            } else s.overrides.tool[k][serverName][toolName] = on
-          }
+          const tool = srv.tools.find((x) => x.name === toolName)
+          if (tool) tool.on = on
           srv.filterDirty = true
         })
       },
       setAllTools(serverName, on, names) {
         mutate((s) => {
-          const srv = findServer(s, serverName)
+          const srv = ensureServer(s, serverName)
           if (!srv) return
           const set = names ? new Set(names) : null
-          const k = scopeKey(s.scope)
-          if (s.scope.kind !== 'global') {
-            s.overrides.tool[k] = s.overrides.tool[k] || {}
-            s.overrides.tool[k][serverName] = s.overrides.tool[k][serverName] || {}
-          }
           srv.tools.forEach((t) => {
             if (set && !set.has(t.name)) return
-            if (s.scope.kind === 'global') t.on = on
-            else if (on === selectors.effToolOn(s, serverName, t.name, k)) delete s.overrides.tool[k][serverName][t.name]
-            else s.overrides.tool[k][serverName][t.name] = on
+            t.on = on
           })
           srv.filterDirty = true
         })
       },
       saveToolList(serverName) {
         mutate((s) => {
-          const srv = findServer(s, serverName)
+          const srv = currentDef(s.servers, s, serverName) || resolveServer(s, serverName)
           if (!srv) return
           srv.filterDirty = false
-          const denied = srv.tools.filter((t) => !selectors.effToolOn(s, serverName, t.name)).length
+          const denied = srv.tools.filter((t) => t.on === false).length
           srv.testMsg = '已保存工具清单：' + denied + ' 个工具 deny' + s.copy.toolSaved
           pushToast(s, '已保存工具清单 · ' + denied + ' 个 deny')
         })
@@ -489,13 +581,13 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
       testConnection(name) {
         let target: McpServer | null = null
         mutate((s) => {
-          target = findServer(s, name)
+          target = ensureServer(s, name)
           if (target) target.testing = true
         })
         if (!target) return
         void host.testConnection(target).then((outcome) => {
           mutate((s) => {
-            const srv = findServer(s, name)
+            const srv = currentDef(s.servers, s, name)
             if (!srv) return
             srv.testing = false
             srv.tools = outcome.tools.map((t) => ({ ...t }))
@@ -507,33 +599,19 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
       },
       toggleMcp(name) {
         mutate((s) => {
-          if (s.scope.kind === 'global') {
-            const srv = findServer(s, name)
-            if (!srv) return
-            srv.enabled = srv.enabled === false
-            srv.testMsg = srv.enabled === false
-              ? '已停用：全部 mcp__' + name + '__* 工具从工具定义里消失。'
-              : '已启用：工具重新出现在所有作用域。'
-          } else {
-            const k = scopeKey(s.scope)
-            const next = !selectors.effServerEnabled(s, name)
-            const layer = '工作区 · ' + selectors.scopeTitle(s.scope, s.meta)
-            if (next === selectors.effServerEnabled(s, name, k)) {
-              if (s.overrides.mcp[k]) delete s.overrides.mcp[k][name]
-            } else {
-              s.overrides.mcp[k] = s.overrides.mcp[k] || {}
-              s.overrides.mcp[k][name] = next
-            }
-            const srv = findServer(s, name)
-            if (srv) srv.testMsg = next
-              ? '已启用：工具仅在「' + layer + '」及上层恢复。'
-              : '已停用：全部 mcp__' + name + '__* 工具仅在「' + layer + '」及上层消失。'
-          }
+          const srv = ensureServer(s, name)
+          if (!srv) return
+          srv.enabled = srv.enabled === false
+          srv.testMsg = srv.enabled === false
+            ? '已停用：全部 mcp__' + name + '__* 工具从这份定义里消失。'
+            : '已启用：工具重新出现在当前作用域链。'
+          pushToast(s, (srv.enabled === false ? '已停用 ' : '已启用 ') + name
+            + (srv.scope === 'workspace' ? '（当前工作区）' : '（全局）'))
         })
       },
       oauthToggle(name) {
         mutate((s) => {
-          const srv = findServer(s, name)
+          const srv = ensureServer(s, name)
           if (!srv) return
           srv.oauth = !srv.oauth
           pushToast(s, srv.oauth ? s.copy.oauthOn : s.copy.oauthOff)
@@ -541,13 +619,33 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
       },
       deleteMcp(name) {
         mutate((s) => {
-          const idx = s.servers.findIndex((x) => x.name === name)
-          if (idx < 0) return
+          const local = currentDef(s.servers, s, name)
+          const snapshot = copyGroups(s.groups)
+          if (!local) {
+            const resolved = resolveServer(s, name)
+            if (!resolved) return
+            if (s.scope.kind === 'workspace') {
+              const copy = ensureServer(s, name)
+              if (!copy) return
+              copy.enabled = false
+              s.mcpDelConfirm = null
+              pushToast(s, '已在本工作区停用 ' + name + '（全局定义仍保留）')
+              return
+            }
+            s.mcpDelConfirm = null
+            return
+          }
+          const idx = s.servers.findIndex((x) => x === local)
           const removed = s.servers.splice(idx, 1)[0]
-          if (s.sel.mcp === name) s.sel.mcp = s.servers.length ? s.servers[0].name : null
+          removeGroupRefs(s, 'mcp', name, s.scope)
+          if (s.sel.mcp === name) {
+            const vis = selectors.visibleServers(s)
+            s.sel.mcp = vis.length ? vis[0].name : null
+          }
           s.mcpDelConfirm = null
-          pushToast(s, '已删除 ' + name, '撤销', () => mutate((p) => {
-            p.servers.splice(Math.min(idx, p.servers.length), 0, { ...removed, tools: removed.tools.map((t) => ({ ...t })) })
+          pushToast(s, '已删除 ' + name + (local.scope === 'workspace' ? '（当前工作区覆盖）' : '（全局定义）'), '撤销', () => mutate((p) => {
+            p.servers.splice(Math.min(idx, p.servers.length), 0, copyServer(removed))
+            p.groups = copyGroups(snapshot)
             p.sel.mcp = name
           }), 6000)
         })
@@ -572,14 +670,14 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
           const ws = s.meta.workspaces.find((w) => w.id === m.target)
           let moved = 0
           m.checked.forEach((name) => {
-            const sk = findSkill(s, name)
-            if (!sk) return
+            const base = currentDef(s.skills, s, name) || resolveSkill(s, name)
+            if (!base) return
             if (m.mode === 'move') {
-              sk.scope = 'workspace'
-              sk.wsId = m.target
+              base.scope = 'workspace'
+              base.wsId = m.target
             } else {
-              if (s.skills.some((x) => x.name === name && x.wsId === m.target)) return
-              s.skills.push({ ...sk, scope: 'workspace', wsId: m.target })
+              if (s.skills.some((x) => x.name === name && x.scope === 'workspace' && x.wsId === m.target)) return
+              s.skills.push({ ...base, scope: 'workspace', wsId: m.target })
             }
             moved += 1
           })
@@ -598,17 +696,35 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
           const modal = s.modal
           if (!modal || modal.type !== 'serverForm') return
           const name = input.serverName.trim()
-          const existing = findServer(s, name)
-          if (existing && existing.name !== editing) {
-            s.modal = { ...modal, error: '同名服务器已存在：' + name }
+          const local = editing ? currentDef(s.servers, s, editing) : null
+          const base = local || (editing ? resolveServer(s, editing) : null)
+          if (editing && !base) return
+          const collision = currentDef(s.servers, s, name)
+          if (collision && collision.name !== editing) {
+            s.modal = { ...modal, error: '当前作用域已有同名服务器：' + name }
             return
           }
-          const srv = editing ? findServer(s, editing) : null
-          if (editing && !srv) return
-          const target: McpServer = srv ?? {
-            name, label: name, status: 'disconnected', transport: input.transport,
-            tokens: 0, auth: input.authMode, enabled: true, tools: [], instructions: '',
+          let target: McpServer | null = local
+          if (!target) {
+            if (s.scope.kind === 'workspace' && base) {
+              target = { ...copyServer(base), scope: 'workspace', wsId: s.scope.id ?? undefined }
+              s.servers.push(target)
+            } else if (s.scope.kind === 'workspace') {
+              target = {
+                name, label: name, scope: 'workspace', wsId: s.scope.id ?? undefined,
+                status: 'disconnected', transport: input.transport, tokens: 0, auth: input.authMode,
+                enabled: true, tools: [], instructions: '',
+              }
+              s.servers.push(target)
+            } else {
+              target = {
+                name, label: name, scope: 'global', status: 'disconnected', transport: input.transport,
+                tokens: 0, auth: input.authMode, enabled: true, tools: [], instructions: '',
+              }
+              s.servers.push(target)
+            }
           }
+          if (!target) return
           target.name = name
           target.label = name
           target.transport = input.transport
@@ -633,13 +749,18 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
           target.reconnect = input.reconnect
           if (input.authMode === 'oauth') target.oauth = target.oauth ?? false
           else delete target.oauth
-          if (!srv) {
-            s.servers.push(target)
+          if (editing && editing !== name) {
+            for (const group of s.groups) {
+              if (!sameScope(group.scope, s.scope)) continue
+              group.items = group.items.map((it) => (it.kind === 'mcp' && it.name === editing ? { kind: 'mcp', name } : it))
+            }
+            if (s.sel.mcp === editing) s.sel.mcp = name
+          }
+          if (!local && !editing) {
             s.sel.mcp = name
             pushToast(s, '已添加 ' + name + '，点「测试连接」拉工具清单')
           } else {
-            if (s.sel.mcp === editing) s.sel.mcp = name
-            pushToast(s, '已保存 ' + name + s.copy.serverSaved)
+            pushToast(s, '已保存 ' + name + s.copy.serverSaved + (target.scope === 'workspace' ? '（当前工作区覆盖）' : ''))
           }
           s.modal = null
         })
@@ -653,6 +774,22 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
         mutate((s) => { s.modal = { type: 'raw', serverName: srv.name, text: yaml } })
       },
       rawSave() { mutate((s) => { s.modal = null; pushToast(s, s.copy.rawSaved) }) },
+      trustWorkspace(wsId) {
+        mutate((s) => {
+          const ws = s.meta.workspaces.find((w) => w.id === wsId)
+          if (ws) ws.trusted = true
+          s.trustDeclined = s.trustDeclined.filter((id) => id !== wsId)
+          s.modal = null
+          pushToast(s, '已信任工作区 ' + (ws ? ws.title : wsId))
+        })
+      },
+      declineTrust(wsId) {
+        mutate((s) => {
+          if (!s.trustDeclined.includes(wsId)) s.trustDeclined.push(wsId)
+          s.modal = null
+          pushToast(s, '已保持受限访问（可随时在左栏重新信任）')
+        })
+      },
 
       // ---- Toast ----
       removeToast(id) { mutate((s) => { s.toasts = s.toasts.filter((t) => t.id !== id) }) },
