@@ -208,6 +208,7 @@ interface WriteBase {
 
 export type Command =
   | (WriteBase & { type: 'group.save'; scope: Scope; group: GroupRecord; name: string })
+  | (WriteBase & { type: 'group.activate'; scope: Scope; group: GroupRecord; name: string })
   | (WriteBase & { type: 'group.effective'; scope: Scope; groupId: string })
   | (WriteBase & { type: 'group.inherit'; scope: Scope })
   | (WriteBase & { type: 'group.none'; scope: Scope })

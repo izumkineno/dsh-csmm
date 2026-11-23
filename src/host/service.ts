@@ -110,11 +110,13 @@ export class CsmmService {
 
   private apply(doc: StoreDocument, scope: Scope, command: Command): void {
     switch (command.type) {
-      case 'group.save': {
+      case 'group.save':
+      case 'group.activate': {
         const group: GroupRecord = { ...command.group, scope: cloneScope(scope), name: command.name }
         const index = doc.groups.findIndex((g) => g.id === group.id && sameScope(g.scope, scope))
         if (index >= 0) doc.groups[index] = group
         else doc.groups.push(group)
+        if (command.type === 'group.activate') doc.activeGroup[scopeKey(scope)] = group.id
         return
       }
       case 'group.effective':

@@ -18,18 +18,20 @@ export function createNavigationActions(
       })
     },
     setEffectiveGroup(id) {
+      const before = getState()
+      const source = findGroup(before, id)
+      if (!source) return
+      const draft = before.drafts[selectors.draftId(source)]
+      const items = (Array.isArray(draft) ? draft : source.items).map((it) => ({ kind: it.kind, name: it.name }))
+      const next = { ...source, items }
       mutate((s) => {
         const g = findGroup(s, id)
         if (!g) return
         const k = scopeKey(g.scope)
         const prev = s.activeGroup[k] ?? ''
-        // 先把尚未保存的分组草稿落盘，避免「设为生效」后预览仍是旧内容。
-        const draftKey = selectors.draftId(g)
-        if (Array.isArray(s.drafts[draftKey])) {
-          g.items = (s.drafts[draftKey] as GroupItem[]).map((it) => ({ kind: it.kind, name: it.name }))
-          s.saved[g.id] = JSON.stringify(g.items)
-          delete s.drafts[draftKey]
-        }
+        g.items = items.map((it) => ({ kind: it.kind, name: it.name }))
+        s.saved[g.id] = JSON.stringify(g.items)
+        delete s.drafts[selectors.draftId(g)]
         s.activeGroup[k] = id
         s.active = { kind: 'group', id }
         s.detail = null
@@ -38,8 +40,12 @@ export function createNavigationActions(
           else delete p.activeGroup[k]
         }), 6000)
       })
-      const target = findGroup(getState(), id)
-      if (target) sync({ type: 'group.effective', scope: target.scope, groupId: id })
+      sync({
+        type: 'group.activate',
+        scope: source.scope,
+        group: { id: next.id, name: next.name, scope: next.scope, enabled: next.enabled, items: next.items },
+        name: next.name,
+      })
     },
     inheritGroup() {
       mutate((s) => {

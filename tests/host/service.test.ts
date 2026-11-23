@@ -43,6 +43,19 @@ function saveGroup(expectedRevision: number): Command {
   return { type: 'group.save', scope: { kind: 'global' }, group, name: 'daily', expectedRevision }
 }
 
+test('group.activate persists the draft items and makes the group effective', () => {
+  const { service } = makeService()
+  const snapshot = service.dispatch({
+    type: 'group.activate',
+    scope: { kind: 'global' },
+    group,
+    name: 'daily',
+    expectedRevision: 0,
+  })
+  assert.equal(snapshot.bootstrap.activeGroup['global:'], 'g1')
+  assert.deepEqual(snapshot.bootstrap.groups[0].items, group.items)
+})
+
 test('snapshot returns a bootstrap with revision and diagnostics', () => {
   const { service } = makeService()
   const snapshot = service.snapshot({ kind: 'global' })
