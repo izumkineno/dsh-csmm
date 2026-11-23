@@ -5,14 +5,28 @@ import path from 'node:path'
 import { test } from 'node:test'
 import {
   registerAgentPrompts,
+  registerAgentSkills,
   SECTION_NAME,
   type AgentLike,
   type PromptSectionLike,
+  type SkillRegistrationLike,
+  type SkillsLike,
   type SystemPromptLike,
 } from '../../src/host/materialize'
 import { globalPaths, workspacePaths } from '../../src/host/paths'
 import { emptyStore, saveStore } from '../../src/host/store'
-import type { CustomPromptRecord, GroupRecord, StoreDocument } from '../../src/shared/types'
+import type { CustomPromptRecord, GroupItemRecord, GroupRecord, SkillRecord, StoreDocument } from '../../src/shared/types'
+
+class FakeSkills implements SkillsLike {
+  readonly registered: SkillRegistrationLike[] = []
+  register(skill: SkillRegistrationLike): () => void {
+    this.registered.push(skill)
+    return () => {
+      const index = this.registered.indexOf(skill)
+      if (index >= 0) this.registered.splice(index, 1)
+    }
+  }
+}
 
 class FakeSystemPrompt implements SystemPromptLike {
   readonly sections: PromptSectionLike[] = []
@@ -32,8 +46,22 @@ function tempDir(prefix: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix))
 }
 
-function group(id: string, scope: GroupRecord['scope']): GroupRecord {
-  return { id, name: id, scope, enabled: true, items: [] }
+function group(id: string, scope: GroupRecord['scope'], items: GroupItemRecord[] = []): GroupRecord {
+  return { id, name: id, scope, enabled: true, items }
+}
+
+function skill(name: string, scope: SkillRecord['scope'], text: string, overrides: Partial<SkillRecord> = {}): SkillRecord {
+  return {
+    name,
+    label: name,
+    scope,
+    bytes: text.length,
+    model: true,
+    user: true,
+    desc: `${name} desc`,
+    text,
+    ...overrides,
+  }
 }
 
 function custom(id: string, text: string, scope: CustomPromptRecord['scope']): CustomPromptRecord {
@@ -127,4 +155,66 @@ test('missing effective group produces empty text', async () => {
   await registerAgentPrompts(agentAt(tempDir('dsh-csmm-cwd-'), prompt), { home })
 
   assert.equal(textOf(prompt), '')
+})
+
+test('enabled prompt-section items render their body', async () => {
+  const home = tempDir('dsh-csmm-mat-')
+  const sectionDir = path.join(globalPaths(home).root, 'sections')
+  fs.mkdirSync(sectionDir, { recursive: true })
+  fs.writeFileSync(path.join(sectionDir, 'core.md'), 'SECTION-BODY-MARKER\n')
+  const doc = globalStore([])
+  doc.groups[0]!.items.push({ kind: 'section', name: 'core' })
+  saveStore(globalPaths(home), doc)
+
+  const prompt = new FakeSystemPrompt()
+  await registerAgentPrompts(agentAt(tempDir('dsh-csmm-cwd-'), prompt), { home })
+
+  const text = textOf(prompt)
+  assert.match(text, /#### core/)
+  assert.match(text, /SECTION-BODY-MARKER/)
+})
+
+test('effective skills are registered with their content and invocation flags', async () => {
+  const home = tempDir('dsh-csmm-mat-')
+  const doc = globalStore([])
+  doc.skills.push(skill('alpha', 'global', 'SKILL-BODY-ALPHA', { model: true, user: false }))
+  doc.groups[0]!.items.push({ kind: 'skill', name: 'alpha' })
+  saveStore(globalPaths(home), doc)
+
+  const skills = new FakeSkills()
+  const agent = agentAt(tempDir('dsh-csmm-cwd-'), new FakeSystemPrompt())
+  agent.ctx = { ...agent.ctx, skills }
+  const dispose = await registerAgentSkills(agent, { home })
+
+  assert.equal(skills.registered.length, 1)
+  const registered = skills.registered[0]!
+  assert.equal(registered.name, 'alpha')
+  assert.equal(registered.content, 'SKILL-BODY-ALPHA')
+  assert.deepEqual(registered.invocation, { modelInvocable: true, userInvocable: false })
+  dispose?.()
+  assert.equal(skills.registered.length, 0)
+})
+
+test('workspace skill definition shadows the global one for that agent', async () => {
+  const home = tempDir('dsh-csmm-mat-')
+  const root = tempDir('dsh-csmm-cwd-')
+  const globalDoc = globalStore([])
+  globalDoc.skills.push(skill('alpha', 'global', 'SKILL-BODY-GLOBAL'))
+  saveStore(globalPaths(home), globalDoc)
+
+  const workspaceDoc = workspaceStore([])
+  workspaceDoc.skills.push(skill('alpha', 'workspace', 'SKILL-BODY-WORKSPACE', { wsId: 'w1' }))
+  workspaceDoc.groups[0]!.items.push({ kind: 'skill', name: 'alpha' })
+  saveStore(workspacePaths(root, 'w1'), workspaceDoc)
+
+  const skills = new FakeSkills()
+  const agent = agentAt(root, new FakeSystemPrompt())
+  agent.ctx = { ...agent.ctx, skills }
+  await registerAgentSkills(agent, {
+    home,
+    workspaceRegistry: { resolveByPath: async () => ({ id: 'w1' }) },
+  })
+
+  assert.equal(skills.registered.length, 1)
+  assert.equal(skills.registered[0]!.content, 'SKILL-BODY-WORKSPACE')
 })

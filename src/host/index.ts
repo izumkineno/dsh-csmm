@@ -2,9 +2,11 @@ import os from 'node:os'
 import path from 'node:path'
 import type { WorkspaceRecord } from '../shared/types'
 import { createRpcHandler } from './http'
-import { registerAgentPrompts, type AgentLike, type WorkspaceRegistryLike } from './materialize'
+import { registerAgentPrompts, registerAgentSkills, type AgentLike, type WorkspaceRegistryLike } from './materialize'
 import { globalPaths, workspacePaths, type ScopePaths } from './paths'
+import { loadSections } from './sections'
 import { CsmmService, type WorkspaceBinding } from './service'
+import { loadStore } from './store'
 
 export const name = 'dsh-csmm'
 export const inject: string[] = ['webServer', 'workspaceRegistry', 'sessions']
@@ -41,7 +43,15 @@ export function apply(ctx: HostContext): void {
     if (typeof ctx.on !== 'function') return undefined
     return ctx.on('agent/created', ({ agent }) => {
       const cwd = sessions?.get?.(String(agent.id))?.header?.cwd
-      return registerAgentPrompts(agent, { home, cwd, workspaceRegistry })
+      const options = { home, cwd, workspaceRegistry }
+      return Promise.all([
+        registerAgentPrompts(agent, options),
+        registerAgentSkills(agent, options),
+      ]).then((disposers) => () => {
+        for (const dispose of disposers) {
+          if (typeof dispose === 'function') dispose()
+        }
+      })
     })
   }
 
@@ -93,6 +103,15 @@ async function openService(ctx: HostContext, workspaceRoot?: string): Promise<Cs
     }
   }
 
+  const trusted = new Set<string>()
+  try {
+    for (const record of loadStore(global).workspaces) {
+      if (record.trusted) trusted.add(record.id)
+    }
+  } catch {
+    // an unreadable global store is reported by the service on first use
+  }
+
   let listed: Array<{ id?: string; title?: string; path?: string }> = []
   try {
     listed = (await registry?.list?.()) ?? []
@@ -106,7 +125,7 @@ async function openService(ctx: HostContext, workspaceRoot?: string): Promise<Cs
         id: w.id,
         title: w.title || path.basename(w.path) || w.id,
         path: w.path,
-        trusted: false,
+        trusted: trusted.has(w.id),
         current: w.id === currentId,
       }))
   } else if (currentId && workspaceRoot) {
@@ -115,13 +134,13 @@ async function openService(ctx: HostContext, workspaceRoot?: string): Promise<Cs
         id: currentId,
         title: path.basename(workspaceRoot) || currentId,
         path: workspaceRoot,
-        trusted: false,
+        trusted: trusted.has(currentId),
         current: true,
       },
     ]
   }
 
-  return new CsmmService({ global, workspace, workspaces, sections: [] })
+  return new CsmmService({ global, workspace, workspaces, sections: loadSections(home) })
 }
 
 function lookup<T>(ctx: HostContext, name: string): T | undefined {
