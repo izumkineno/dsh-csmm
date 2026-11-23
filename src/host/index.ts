@@ -102,7 +102,7 @@ export function apply(ctx: HostContext): void {
         const rows = agents?.list?.() ?? []
         agent = sessionId
           ? rows.find((row) => row.id === sessionId || row.session?.id === sessionId)
-          : rows[0]
+          : undefined
       } catch {
         agent = undefined
       }

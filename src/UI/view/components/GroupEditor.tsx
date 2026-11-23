@@ -9,6 +9,20 @@ import { useAppViewModel } from '../../viewmodel/useAppViewModel'
 
 type Filter = 'all' | 'selected' | 'unselected'
 
+function SectionSwitch(props: { name: string; label: string; meta?: string; checked: boolean; onChange: () => void }) {
+  return (
+    <div className='check-row switch-row'>
+      <label className={'switch' + (props.checked ? ' on' : '')} title={props.checked ? '已注入' : '已拦截'}>
+        <input type='checkbox' role='switch' data-check='1' data-kind='section' data-name={props.name}
+          checked={props.checked} onChange={props.onChange} aria-label={props.label + (props.checked ? '（注入）' : '（拦截）')} />
+        <span className='switch-track' aria-hidden='true'></span>
+      </label>
+      <label className='c-label' onClick={props.onChange}>{props.label}</label>
+      {props.meta && <span className='muted'>{props.meta}</span>}
+    </div>
+  )
+}
+
 function CheckRow(props: {
   kind: GroupItemKind
   name: string
@@ -164,7 +178,7 @@ export default function GroupEditor({ g }: { g: Group }) {
               <div key={src}>
                 <div className="source-head">{src}<span className="count">{list.filter((s) => check('section', s.name)).length}/{list.length}</span></div>
                 {list.map((s) => (
-                  <CheckRow key={s.name} kind="section" name={s.name} label={s.name} meta={s.tokens + ' tok'}
+                  <SectionSwitch key={s.name} name={s.name} label={s.name} meta={s.tokens + ' tok'}
                     checked={check('section', s.name)} onChange={() => toggle('section', s.name)} />
                 ))}
               </div>
@@ -174,7 +188,7 @@ export default function GroupEditor({ g }: { g: Group }) {
             <div>
               <div className="source-head">DSH 注册提示词<span className="count">{dshSections.filter((s) => check('section', s.name)).length}/{dshSections.length}</span></div>
               {dshSections.filter((s) => match('section', s.name)).map((s) => (
-                <CheckRow key={s.name} kind="section" name={s.name} label={s.name} meta={s.tokens + ' tok'}
+                <SectionSwitch key={s.name} name={s.name} label={s.name} meta={s.tokens + ' tok'}
                   checked={check('section', s.name)} onChange={() => toggle('section', s.name)} />
               ))}
             </div>
