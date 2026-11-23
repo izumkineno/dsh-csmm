@@ -91,7 +91,16 @@ export function ItemRow(props: {
   const { it, state, selectors, expanded, onToggle } = props
   if (it.kind === 'section') {
     const section = state.meta.sections.find((x) => x.name === it.name)
-    return previewRow(it.name, section ? section.text : '', section ? section.tokens : 0, section ? section.source : '提示词段', expanded, onToggle, 'cat-section')
+    const dsh = state.dshPrompts.find((x) => x.name === it.name)
+    return previewRow(
+      it.name,
+      section ? section.text : dsh ? dsh.text : '',
+      section ? section.tokens : dsh ? dsh.tokens : 0,
+      section ? section.source : dsh ? 'DSH' : '提示词段',
+      expanded,
+      onToggle,
+      'cat-section',
+    )
   }
   if (it.kind === 'skill') {
     const skill = selectors.resolvedSkill(state, it.name)
@@ -136,7 +145,9 @@ export function buildEffectiveText(state: AppState, selectors: Selectors): strin
     for (const item of winner.group.items) {
       if (item.kind === 'section') {
         const section = state.meta.sections.find((x) => x.name === item.name)
+        const dsh = section ? undefined : state.dshPrompts.find((x) => x.name === item.name)
         if (section) lines.push('\n## ' + section.name + '（' + section.source + '）\n' + section.text)
+        else if (dsh) lines.push('\n## ' + dsh.name + '（DSH）\n' + dsh.text)
       }
       if (item.kind === 'skill') {
         const skill = selectors.resolvedSkill(state, item.name)

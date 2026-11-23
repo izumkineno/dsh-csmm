@@ -58,17 +58,25 @@ export function apply(ctx: HostContext): void {
   const registerAgentListener = (): (() => void) | void => {
     if (typeof ctx.on !== 'function') return undefined
     return ctx.on('agent/created', ({ agent }) => {
-      const cwd = sessions?.get?.(String(agent.id))?.header?.cwd
-      const options = { home, cwd, workspaceRegistry }
-      return Promise.all([
-        registerAgentPrompts(agent, options),
-        registerAgentSkills(agent, options),
-        registerAgentPromptFilter(agent, options),
-      ]).then((disposers) => () => {
-        for (const dispose of disposers) {
-          if (typeof dispose === 'function') dispose()
+      void (async () => {
+        try {
+          const cwd = sessions?.get?.(String(agent.id))?.header?.cwd
+          const options = { home, cwd, workspaceRegistry }
+          const disposers = await Promise.all([
+            registerAgentPrompts(agent, options).catch(() => undefined),
+            registerAgentSkills(agent, options).catch(() => undefined),
+            registerAgentPromptFilter(agent, options).catch(() => undefined),
+          ])
+          return () => {
+            for (const dispose of disposers) {
+              if (typeof dispose === 'function') dispose()
+            }
+          }
+        } catch (error) {
+          process.stderr.write(`[csmm] agent/created failed: ${String(error)}\n`)
+          return undefined
         }
-      })
+      })()
     })
   }
 
