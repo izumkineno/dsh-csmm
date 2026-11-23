@@ -1,15 +1,15 @@
 import os from 'node:os'
 import path from 'node:path'
-import type { CustomPromptRecord } from '../shared/types'
+import type { CustomPromptRecord, GroupRecord, McpServerRecord, SkillRecord, StoreDocument } from '../shared/types'
 import { winningLayer } from '../shared/resolve'
-import { globalPaths } from './paths'
+import { globalPaths, workspacePaths } from './paths'
 import { loadStore } from './store'
 
-/** The subset of the host `systemPrompt` service this slice needs. */
+/** The subset of the host `systemPrompt` service this plugin needs. */
 export interface PromptSectionLike {
   name: string
   order: number
-  text: string
+  text: string | ((context: unknown) => string)
   interpolate?: boolean
 }
 
@@ -18,64 +18,137 @@ export interface SystemPromptLike {
   getSectionOrder(name: string): number
 }
 
-export const SECTION_NAME = 'dsh-csmm:global-prompts'
-
-/**
- * Materializes the effective global custom prompts into one system prompt
- * section. Registration is disposable and refreshed after every committed
- * store write; an empty result removes the section instead of leaving an
- * empty contribution behind.
- */
-export class PromptMaterializer {
-  private readonly systemPrompt: SystemPromptLike
-  private readonly home: string
-  private dispose: (() => void) | undefined
-  private text = ''
-
-  constructor(systemPrompt: SystemPromptLike, home = defaultHome()) {
-    this.systemPrompt = systemPrompt
-    this.home = home
-  }
-
-  refresh(): void {
-    let next = ''
-    try {
-      const doc = loadStore(globalPaths(this.home))
-      const layer = winningLayer(doc, { kind: 'global' })
-      // Customs only apply together with an effective group, matching the UI.
-      if (layer.group) next = renderCustoms(layer.customs)
-    } catch {
-      next = ''
-    }
-    if (next === this.text) return
-    this.text = next
-    this.dispose?.()
-    this.dispose = undefined
-    if (!next.trim()) return
-    this.dispose = this.systemPrompt.section({
-      name: SECTION_NAME,
-      order: sectionOrder(this.systemPrompt),
-      text: next,
-      interpolate: false,
-    })
-  }
-
-  disposeNow(): void {
-    this.dispose?.()
-    this.dispose = undefined
-    this.text = ''
-  }
-
-  currentText(): string {
-    return this.text
+/** The subset of a live agent this plugin reads. */
+export interface AgentLike {
+  id?: string
+  session?: { cwd?: string }
+  ctx?: {
+    systemPrompt?: SystemPromptLike
+    get?: (name: string) => unknown
   }
 }
 
-export function renderCustoms(customs: readonly CustomPromptRecord[]): string {
-  return customs
-    .filter((c) => c.enabled !== false && c.text.trim() !== '')
-    .map((c) => `## ${c.title.trim() || c.id}\n\n${c.text.trim()}`)
-    .join('\n\n')
+export interface WorkspaceRegistryLike {
+  resolveByPath?: (root: string) => Promise<{ id?: string } | undefined>
+}
+
+export interface MaterializeOptions {
+  home?: string
+  cwd?: string
+  workspaceRegistry?: WorkspaceRegistryLike
+}
+
+export const SECTION_NAME = 'dsh-csmm:prompts'
+
+/**
+ * Register one prompt section in the agent's own scope. The section is
+ * re-evaluated at every assembly, so a committed store write is visible on the
+ * next turn without any refresh bookkeeping. Registrations made through
+ * `agent.ctx` are disposed with the agent by the host.
+ */
+export async function registerAgentPrompts(
+  agent: AgentLike,
+  options: MaterializeOptions = {},
+): Promise<(() => void) | undefined> {
+  const cwd = options.cwd ?? agent.session?.cwd
+  const systemPrompt = agent.ctx?.systemPrompt
+    ?? (agent.ctx?.get?.('systemPrompt') as SystemPromptLike | undefined)
+  if (!cwd || !systemPrompt) return undefined
+
+  const home = options.home ?? defaultHome()
+  let workspaceId: string | undefined
+  try {
+    workspaceId = (await options.workspaceRegistry?.resolveByPath?.(cwd))?.id
+  } catch {
+    workspaceId = undefined
+  }
+
+  const text = (): string => renderAgentPrompt({ home, cwd, workspaceId })
+  return systemPrompt.section({
+    name: SECTION_NAME,
+    order: sectionOrder(systemPrompt),
+    text,
+    interpolate: false,
+  })
+}
+
+/** Render the effective configuration for one agent. Never throws to the host. */
+export function renderAgentPrompt(input: {
+  home: string
+  cwd?: string
+  workspaceId?: string
+}): string {
+  try {
+    const globalDoc = loadStore(globalPaths(input.home))
+    const trusted = input.workspaceId === undefined
+      || globalDoc.workspaces.find((w) => w.id === input.workspaceId)?.trusted !== false
+    if (!trusted || !input.cwd || !input.workspaceId) return renderGlobal(globalDoc)
+    const workspaceDoc = loadStore(workspacePaths(input.cwd, input.workspaceId))
+    return renderWorkspace(globalDoc, workspaceDoc, input.workspaceId)
+  } catch {
+    return ''
+  }
+}
+
+function renderGlobal(doc: StoreDocument): string {
+  const layer = winningLayer(doc, { kind: 'global' })
+  if (!layer.group) return ''
+  return compose(layer.group, layer.customs, doc, doc)
+}
+
+function renderWorkspace(globalDoc: StoreDocument, workspaceDoc: StoreDocument, workspaceId: string): string {
+  const key = `workspace:${workspaceId}`
+  const active = workspaceDoc.activeGroup[key] ?? globalDoc.activeGroup['global:']
+  if (active === '' || active === undefined) return ''
+  const group = workspaceDoc.groups.find((g) => g.id === active)
+    ?? globalDoc.groups.find((g) => g.id === active)
+  if (!group) return ''
+  const owner = group.scope.kind === 'workspace' ? workspaceDoc : globalDoc
+  return compose(group, owner.customs, globalDoc, workspaceDoc)
+}
+
+/** Resolve a definition by name with the workspace copy winning over global. */
+function pick<T extends { name: string; enabled?: boolean }>(workspace: T[], global: T[], name: string): T | undefined {
+  return workspace.find((item) => item.name === name) ?? global.find((item) => item.name === name)
+}
+
+function compose(
+  group: GroupRecord,
+  customs: readonly CustomPromptRecord[],
+  globalDoc: StoreDocument,
+  workspaceDoc: StoreDocument,
+): string {
+  const blocks: string[] = []
+  const sections = group.items.filter((item) => item.kind === 'section').map((item) => item.name)
+  if (sections.length > 0) blocks.push(`### 启用的提示词段\n${sections.map((n) => `- ${n}`).join('\n')}`)
+
+  const renderedCustoms = customs
+    .filter((item) => item.enabled !== false && item.text.trim() !== '')
+    .map((item) => `## ${item.title.trim() || item.id}\n\n${item.text.trim()}`)
+  if (renderedCustoms.length > 0) blocks.push(renderedCustoms.join('\n\n'))
+
+  const skills = group.items
+    .filter((item) => item.kind === 'skill')
+    .map((item) => pick<SkillRecord>(workspaceDoc.skills, globalDoc.skills, item.name))
+    .filter((item): item is SkillRecord => item !== undefined && item.enabled !== false)
+  if (skills.length > 0) {
+    blocks.push(`### 技能\n${skills.map((s) => `- **${s.label || s.name}**（${s.name}）：${s.desc.trim() || '无说明'}`).join('\n')}`)
+  }
+
+  const servers = group.items
+    .filter((item) => item.kind === 'mcp')
+    .map((item) => pick<McpServerRecord>(workspaceDoc.servers, globalDoc.servers, item.name))
+    .filter((item): item is McpServerRecord => item !== undefined && item.enabled !== false)
+  if (servers.length > 0) {
+    blocks.push(`### MCP 服务器\n${servers.map((s) => {
+      const tools = s.tools.filter((t) => t.on !== false).map((t) => t.name).join(', ')
+      const note = s.instructions.trim() || '无说明'
+      return `- **${s.label || s.name}**（${s.name}）：${note}${tools ? `；工具：${tools}` : ''}`
+    }).join('\n')}`)
+  }
+
+  if (blocks.length === 0) return ''
+  return `## dsh-csmm 生效配置：${group.name}\n\n${blocks.join('\n\n')}`
 }
 
 function sectionOrder(systemPrompt: SystemPromptLike): number {

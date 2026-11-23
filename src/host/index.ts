@@ -2,26 +2,30 @@ import os from 'node:os'
 import path from 'node:path'
 import type { WorkspaceRecord } from '../shared/types'
 import { createRpcHandler } from './http'
-import { PromptMaterializer, type SystemPromptLike } from './materialize'
+import { registerAgentPrompts, type AgentLike, type WorkspaceRegistryLike } from './materialize'
 import { globalPaths, workspacePaths, type ScopePaths } from './paths'
 import { CsmmService, type WorkspaceBinding } from './service'
 
 export const name = 'dsh-csmm'
-export const inject: string[] = ['webServer', 'systemPrompt']
+export const inject: string[] = ['webServer', 'workspaceRegistry', 'sessions']
 
 export const RPC_ROUTE = '/dsh-csmm/rpc'
 
 interface HostContext {
   get?: (name: string) => unknown
   effect?: (fn: () => () => void) => void
+  on?: (event: string, listener: (payload: { agent: AgentLike }) => unknown) => (() => void) | void
+}
+
+interface SessionStoreLike {
+  get?: (id: string) => { header?: { cwd?: string } } | undefined
 }
 
 interface RouteServer {
   register?: (route: { kind: 'exact'; path: string; handler: unknown }) => (() => void) | void
 }
 
-interface WorkspaceRegistryLike {
-  resolveByPath?: (root: string) => Promise<{ id?: string; title?: string; path?: string } | undefined>
+interface WorkspaceRegistryApi extends WorkspaceRegistryLike {
   list?: () => Promise<Array<{ id?: string; title?: string; path?: string }>>
 }
 
@@ -30,35 +34,43 @@ export function apply(ctx: HostContext): void {
   if (!webServer?.register) return
 
   const home = process.env.DSH_HOME ?? path.join(os.homedir(), '.dsh')
-  const systemPrompt = lookup<SystemPromptLike>(ctx, 'systemPrompt')
-  const materializer = systemPrompt ? new PromptMaterializer(systemPrompt, home) : undefined
-  if (materializer) {
-    if (typeof ctx.effect === 'function') {
-      ctx.effect(() => {
-        materializer.refresh()
-        return () => materializer.disposeNow()
-      })
-    } else {
-      materializer.refresh()
-    }
-  }
+  const workspaceRegistry = lookup<WorkspaceRegistryApi>(ctx, 'workspaceRegistry')
+  const sessions = lookup<SessionStoreLike>(ctx, 'sessions')
 
-  const handler = createRpcHandler({
-    service: (workspaceRoot) => openService(ctx, workspaceRoot),
-    onChanged: () => materializer?.refresh(),
-  })
-  const register = (): (() => void) | void =>
-    webServer.register!({ kind: 'exact', path: RPC_ROUTE, handler })
+  const registerAgentListener = (): (() => void) | void => {
+    if (typeof ctx.on !== 'function') return undefined
+    return ctx.on('agent/created', ({ agent }) => {
+      const cwd = sessions?.get?.(String(agent.id))?.header?.cwd
+      return registerAgentPrompts(agent, { home, cwd, workspaceRegistry })
+    })
+  }
 
   if (typeof ctx.effect === 'function') {
     ctx.effect(() => {
-      const dispose = register()
+      const dispose = registerAgentListener()
       return () => {
         if (typeof dispose === 'function') dispose()
       }
     })
   } else {
-    register()
+    registerAgentListener()
+  }
+
+  const handler = createRpcHandler({
+    service: (workspaceRoot) => openService(ctx, workspaceRoot),
+  })
+  const registerRoute = (): (() => void) | void =>
+    webServer.register!({ kind: 'exact', path: RPC_ROUTE, handler })
+
+  if (typeof ctx.effect === 'function') {
+    ctx.effect(() => {
+      const dispose = registerRoute()
+      return () => {
+        if (typeof dispose === 'function') dispose()
+      }
+    })
+  } else {
+    registerRoute()
   }
 }
 
@@ -68,7 +80,7 @@ async function openService(ctx: HostContext, workspaceRoot?: string): Promise<Cs
   let workspace: WorkspaceBinding | undefined
   let workspaces: WorkspaceRecord[] | undefined
 
-  const registry = lookup<WorkspaceRegistryLike>(ctx, 'workspaceRegistry')
+  const registry = lookup<WorkspaceRegistryApi>(ctx, 'workspaceRegistry')
   let currentId: string | undefined
   if (workspaceRoot) {
     try {
