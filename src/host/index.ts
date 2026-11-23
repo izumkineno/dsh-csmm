@@ -2,11 +2,12 @@ import os from 'node:os'
 import path from 'node:path'
 import type { WorkspaceRecord } from '../shared/types'
 import { createRpcHandler } from './http'
+import { PromptMaterializer, type SystemPromptLike } from './materialize'
 import { globalPaths, workspacePaths, type ScopePaths } from './paths'
 import { CsmmService, type WorkspaceBinding } from './service'
 
 export const name = 'dsh-csmm'
-export const inject: string[] = ['webServer']
+export const inject: string[] = ['webServer', 'systemPrompt']
 
 export const RPC_ROUTE = '/dsh-csmm/rpc'
 
@@ -28,8 +29,23 @@ export function apply(ctx: HostContext): void {
   const webServer = lookup<RouteServer>(ctx, 'webServer')
   if (!webServer?.register) return
 
+  const home = process.env.DSH_HOME ?? path.join(os.homedir(), '.dsh')
+  const systemPrompt = lookup<SystemPromptLike>(ctx, 'systemPrompt')
+  const materializer = systemPrompt ? new PromptMaterializer(systemPrompt, home) : undefined
+  if (materializer) {
+    if (typeof ctx.effect === 'function') {
+      ctx.effect(() => {
+        materializer.refresh()
+        return () => materializer.disposeNow()
+      })
+    } else {
+      materializer.refresh()
+    }
+  }
+
   const handler = createRpcHandler({
     service: (workspaceRoot) => openService(ctx, workspaceRoot),
+    onChanged: () => materializer?.refresh(),
   })
   const register = (): (() => void) | void =>
     webServer.register!({ kind: 'exact', path: RPC_ROUTE, handler })

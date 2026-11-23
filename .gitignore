@@ -9,3 +9,4 @@ ai-memory.db*
 
 # csmm 浏览器测试写入的工作区状态（<root>/.dsh/<workspace-id>/），不入库
 .dsh/
+.omd

@@ -5,6 +5,7 @@ import type { CsmmService } from './service'
 export interface RpcDeps {
   service(workspaceRoot?: string): Promise<CsmmService>
   probe?(serverName: string): Promise<ConnectionOutcome>
+  onChanged?(): void
 }
 
 export interface RpcResult {
@@ -26,7 +27,9 @@ export async function handleRpc(
     if (request.method === 'dispatch') {
       if (!request.command) return fail(400, 'E_PAYLOAD', 'command is required')
       const service = await deps.service(request.workspaceRoot)
-      return { status: 200, body: { ok: true, snapshot: service.dispatch(request.command) } }
+      const snapshot = service.dispatch(request.command)
+      deps.onChanged?.()
+      return { status: 200, body: { ok: true, snapshot } }
     }
     if (request.method === 'testConnection') {
       if (!request.server) return fail(400, 'E_PAYLOAD', 'server is required')
