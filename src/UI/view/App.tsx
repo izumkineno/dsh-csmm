@@ -38,9 +38,12 @@ function Editor() {
 }
 
 export default function App() {
-  const { state } = useAppViewModel()
+  const { state, actions } = useAppViewModel()
   const scopeCount = 1 + state.meta.workspaces.length
   const mainRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (state.dshPromptsState === 'idle') actions.loadDshPrompts()
+  }, [state.dshPromptsState, actions])
   useEffect(() => {
     mainRef.current?.focus()
   }, [state.detail, state.tab, state.active.kind, state.active.id])

@@ -33,7 +33,11 @@ function CheckRow(props: {
 
 export default function GroupEditor({ g }: { g: Group }) {
   const { state, actions, selectors } = useAppViewModel()
-  const sections = state.meta.sections.filter((section) => section.kind === 'section')
+  const ownSections = state.meta.sections.filter((section) => section.kind === 'section')
+  const dshSections = state.dshPrompts
+    .filter((p) => p.kind === 'section' && !ownSections.some((s) => s.name === p.name))
+    .map((p) => ({ name: p.name, source: 'DSH', tokens: p.tokens }))
+  const sections = [...ownSections, ...dshSections]
   const [name, setName] = useState(g.name)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
@@ -166,6 +170,15 @@ export default function GroupEditor({ g }: { g: Group }) {
               </div>
             )
           })}
+          {dshSections.length > 0 && (
+            <div>
+              <div className="source-head">DSH 注册提示词<span className="count">{dshSections.filter((s) => check('section', s.name)).length}/{dshSections.length}</span></div>
+              {dshSections.filter((s) => match('section', s.name)).map((s) => (
+                <CheckRow key={s.name} kind="section" name={s.name} label={s.name} meta={s.tokens + ' tok'}
+                  checked={check('section', s.name)} onChange={() => toggle('section', s.name)} />
+              ))}
+            </div>
+          )}
           <div className="source-head">运行上下文</div>
           {state.meta.sections.filter((s) => s.kind === 'context').map((s) => (
             <CheckRow key={s.name} kind="section" name={s.name} label={s.name} meta={s.tokens + ' tok'}

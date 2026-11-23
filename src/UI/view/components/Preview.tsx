@@ -12,13 +12,9 @@ import { BudgetCard, ItemRow, buildDiagnostics, buildEffectiveText, previewRow }
 
 function InspectorView() {
   const { state, selectors, actions } = useAppViewModel()
-  const [tab, setTab] = useState<'content' | 'diagnostics' | 'dsh'>('content')
+  const [tab, setTab] = useState<'content' | 'diagnostics'>('content')
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const toggle = (key: string) => setExpanded((map) => ({ ...map, [key]: !map[key] }))
-
-  useEffect(() => {
-    if (state.dshPromptsState === 'idle') actions.loadDshPrompts()
-  }, [state.dshPromptsState, actions])
 
   const budget = selectors.budgetBreakdown(state)
   const diagnostics = buildDiagnostics(state, selectors, actions)
@@ -52,8 +48,6 @@ function InspectorView() {
           onClick={() => setTab('content')}>生效内容 <span className="n" title="本组项数，不含自定义提示词与运行上下文">{group ? group.items.length : 0}</span></button>
         <button role="tab" aria-selected={tab === 'diagnostics'} className={'inspector-tab' + (tab === 'diagnostics' ? ' active' : '')}
           onClick={() => setTab('diagnostics')}>诊断 <span className={'n' + (diagnostics.length ? ' has' : '')}>{diagnostics.length}</span></button>
-        <button role="tab" aria-selected={tab === 'dsh'} className={'inspector-tab' + (tab === 'dsh' ? ' active' : '')}
-          onClick={() => setTab('dsh')}>DSH 提示词 <span className="n" title="宿主 systemPrompt.assemble 返回的段数与工具数">{state.dshPrompts.length}</span></button>
       </div>
 
       {tab === 'content' && (
@@ -145,50 +139,6 @@ function InspectorView() {
             <span className="muted">工具 deny {selectors.denyCountFor(state)}</span>
             <span className="muted">技能遮蔽 {selectors.shadowCountFor(state)}</span>
             <button className="btn small" onClick={copy}>复制生效内容</button>
-          </div>
-        </div>
-      )}
-
-      {tab === 'dsh' && (
-        <div className="inspector-pane" role="tabpanel">
-          {state.dshPromptsState === 'loading' && <div className="empty">读取中…</div>}
-          {state.dshPromptsState === 'error' && (
-            <div className="empty">读取失败：{state.dshPromptsError ?? '未知错误'}</div>
-          )}
-          {state.dshPromptsState === 'ready' && state.dshPrompts.map((p, i) => {
-            const off = state.disabledPrompts.includes(p.name)
-            return (
-              <details key={p.name + ':' + i} className={'pv-block' + (off ? ' off' : '')} data-dsh-prompt={p.name}>
-                <summary className="res-head">
-                  {p.kind === 'section' ? (
-                    <input
-                      type="checkbox"
-                      className="custom-check"
-                      data-dsh-toggle={p.name}
-                      checked={!off}
-                      title="关闭后，此段不会注入下一轮系统提示词"
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={() => actions.toggleDshPrompt(p.name, !off)}
-                    />
-                  ) : (
-                    <span className="tag muted" title="运行上下文与工具定义属于宿主必需项，不提供关闭">只读</span>
-                  )}
-                  <span className="n">{p.name}</span>
-                  <span className="tag">{p.kind === 'context' ? '上下文' : p.kind === 'tool' ? '工具定义' : '提示词段'}</span>
-                  {off && <span className="tag bad">已禁用</span>}
-                  <span className="muted">{p.tokens} tok</span>
-                </summary>
-                <pre className="dsh-prompt-text">{p.text}</pre>
-              </details>
-            )
-          })}
-          {state.dshPromptsState === 'ready' && !state.dshPrompts.length && (
-            <div className="empty">宿主没有返回任何提示词段。</div>
-          )}
-          <div className="inspector-foot">
-            <span className="muted">systemPrompt.assemble() · 可逐段关闭</span>
-            <span className="muted">共 {state.dshPrompts.length} 项 · 可关闭 {state.dshPrompts.filter((p) => p.kind === 'section').length} 段 · 已禁用 {state.disabledPrompts.length}</span>
-            <button className="btn small" onClick={() => actions.loadDshPrompts()}>刷新</button>
           </div>
         </div>
       )}

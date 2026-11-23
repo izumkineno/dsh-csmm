@@ -139,7 +139,9 @@ export const groupCounts = (group: Group): Record<GroupItemKind, number> => {
 
 const sectionTokens = (state: AppState, name: string): number => {
   const section = state.meta.sections.find((x) => x.name === name)
-  return section ? section.tokens : 0
+  if (section) return section.tokens
+  const dsh = state.dshPrompts.find((x) => x.name === name)
+  return dsh ? dsh.tokens : 0
 }
 
 const serverTokens = (state: AppState, name: string): number => {
