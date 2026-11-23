@@ -7,9 +7,10 @@ import { globalPaths, workspacePaths, type ScopePaths } from './paths'
 import { loadSections } from './sections'
 import { CsmmService, type WorkspaceBinding } from './service'
 import { loadStore } from './store'
+import { listRegisteredPrompts, type SystemPromptAssembler } from './prompts'
 
 export const name = 'dsh-csmm'
-export const inject: string[] = ['webServer', 'workspaceRegistry', 'sessions']
+export const inject: string[] = ['webServer', 'workspaceRegistry', 'sessions', 'systemPrompt']
 
 export const RPC_ROUTE = '/dsh-csmm/rpc'
 
@@ -68,6 +69,11 @@ export function apply(ctx: HostContext): void {
 
   const handler = createRpcHandler({
     service: (workspaceRoot) => openService(ctx, workspaceRoot),
+    promptList: async () => {
+      const systemPrompt = lookup<SystemPromptAssembler>(ctx, 'systemPrompt')
+      if (!systemPrompt) return []
+      return listRegisteredPrompts(systemPrompt)
+    },
   })
   const registerRoute = (): (() => void) | void =>
     webServer.register!({ kind: 'exact', path: RPC_ROUTE, handler })

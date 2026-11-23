@@ -73,6 +73,21 @@ test('testConnection is honest when the host has no probe', async () => {
   assert.match(body.outcome.message, /未提供/)
 })
 
+test('promptList returns the host assembly and degrades to empty', async () => {
+  const service = makeService()
+  const result = await handleRpc(
+    { ...deps(service), promptList: async () => [{ name: 'p', text: 'hello', tokens: 2 }] },
+    { method: 'promptList' },
+  )
+  assert.equal(result.status, 200)
+  const body = result.body as { ok: boolean; prompts: Array<{ name: string; tokens: number }> }
+  assert.equal(body.ok, true)
+  assert.deepEqual(body.prompts, [{ name: 'p', text: 'hello', tokens: 2 }])
+
+  const empty = await handleRpc(deps(service), { method: 'promptList' })
+  assert.deepEqual((empty.body as { prompts: unknown[] }).prompts, [])
+})
+
 test('unknown methods and missing commands are rejected', async () => {
   const service = makeService()
   const unknown = await handleRpc(deps(service), { method: 'nope' } as unknown as RpcRequest)

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   SCOPE_LABEL,
   type Actions,
@@ -12,9 +12,13 @@ import { BudgetCard, ItemRow, buildDiagnostics, buildEffectiveText, previewRow }
 
 function InspectorView() {
   const { state, selectors, actions } = useAppViewModel()
-  const [tab, setTab] = useState<'content' | 'diagnostics'>('content')
+  const [tab, setTab] = useState<'content' | 'diagnostics' | 'dsh'>('content')
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const toggle = (key: string) => setExpanded((map) => ({ ...map, [key]: !map[key] }))
+
+  useEffect(() => {
+    if (state.dshPromptsState === 'idle') actions.loadDshPrompts()
+  }, [state.dshPromptsState, actions])
 
   const budget = selectors.budgetBreakdown(state)
   const diagnostics = buildDiagnostics(state, selectors, actions)
@@ -48,6 +52,8 @@ function InspectorView() {
           onClick={() => setTab('content')}>生效内容 <span className="n" title="本组项数，不含自定义提示词与运行上下文">{group ? group.items.length : 0}</span></button>
         <button role="tab" aria-selected={tab === 'diagnostics'} className={'inspector-tab' + (tab === 'diagnostics' ? ' active' : '')}
           onClick={() => setTab('diagnostics')}>诊断 <span className={'n' + (diagnostics.length ? ' has' : '')}>{diagnostics.length}</span></button>
+        <button role="tab" aria-selected={tab === 'dsh'} className={'inspector-tab' + (tab === 'dsh' ? ' active' : '')}
+          onClick={() => setTab('dsh')}>DSH 提示词 <span className="n" title="宿主 systemPrompt.assemble 返回的段数与工具数">{state.dshPrompts.length}</span></button>
       </div>
 
       {tab === 'content' && (
@@ -139,6 +145,32 @@ function InspectorView() {
             <span className="muted">工具 deny {selectors.denyCountFor(state)}</span>
             <span className="muted">技能遮蔽 {selectors.shadowCountFor(state)}</span>
             <button className="btn small" onClick={copy}>复制生效内容</button>
+          </div>
+        </div>
+      )}
+
+      {tab === 'dsh' && (
+        <div className="inspector-pane" role="tabpanel">
+          {state.dshPromptsState === 'loading' && <div className="empty">读取中…</div>}
+          {state.dshPromptsState === 'error' && (
+            <div className="empty">读取失败：{state.dshPromptsError ?? '未知错误'}</div>
+          )}
+          {state.dshPromptsState === 'ready' && state.dshPrompts.map((p, i) => (
+            <details key={p.name + ':' + i} className="pv-block" data-dsh-prompt={p.name}>
+              <summary className="res-head">
+                <span className="n">{p.name}</span>
+                <span className="muted">{p.tokens} tok</span>
+              </summary>
+              <pre className="dsh-prompt-text">{p.text}</pre>
+            </details>
+          ))}
+          {state.dshPromptsState === 'ready' && !state.dshPrompts.length && (
+            <div className="empty">宿主没有返回任何提示词段。</div>
+          )}
+          <div className="inspector-foot">
+            <span className="muted">只读 · systemPrompt.assemble()</span>
+            <span className="muted">共 {state.dshPrompts.length} 段</span>
+            <button className="btn small" onClick={() => actions.loadDshPrompts()}>刷新</button>
           </div>
         </div>
       )}

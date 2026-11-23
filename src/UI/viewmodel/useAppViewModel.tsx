@@ -105,6 +105,35 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
       ...createModalActions(ctx),
       ...createToastActions(ctx),
       toast,
+      loadDshPrompts() {
+        if (!host.listPrompts) {
+          mutate((s) => {
+            s.dshPromptsState = 'error'
+            s.dshPromptsError = '宿主未提供提示词读取接口'
+          })
+          return
+        }
+        mutate((s) => {
+          s.dshPromptsState = 'loading'
+          s.dshPromptsError = null
+        })
+        void host
+          .listPrompts()
+          .then((prompts) => {
+            setState((prev) => ({
+              ...prev,
+              dshPrompts: prompts,
+              dshPromptsState: 'ready',
+              dshPromptsError: null,
+            }))
+          })
+          .catch((err: unknown) => {
+            mutate((s) => {
+              s.dshPromptsState = 'error'
+              s.dshPromptsError = err instanceof Error ? err.message : String(err)
+            })
+          })
+      },
     }
   }, [mutate, host])
 

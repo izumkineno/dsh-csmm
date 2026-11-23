@@ -23,6 +23,9 @@ export function makeInitialState(bootstrap: Bootstrap): AppState {
     trustDeclined: [],
     modal: null,
     toasts: [],
+    dshPrompts: [],
+    dshPromptsState: 'idle',
+    dshPromptsError: null,
     meta: {
       workspaces: bootstrap.workspaces,
       sections: bootstrap.sections,
@@ -64,6 +67,7 @@ export function cloneState(prev: AppState): AppState {
     trustDeclined: [...prev.trustDeclined],
     modal: prev.modal ? ({ ...prev.modal } as ModalState) : null,
     toasts: [...prev.toasts],
+    dshPrompts: prev.dshPrompts.map((p) => ({ ...p })),
   }
 }
 

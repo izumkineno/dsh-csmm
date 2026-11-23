@@ -223,8 +223,15 @@ export type Command =
   | (WriteBase & { type: 'mcp.tools'; scope: Scope; name: string; tools: ToolRecord[] })
   | { type: 'trust.set'; workspaceId: string; trusted: boolean; expectedRevision?: number }
 
+/** One prompt section returned by the host's live `systemPrompt.assemble()` read. */
+export interface PromptSectionView {
+  name: string
+  text: string
+  tokens: number
+}
+
 export interface RpcRequest {
-  method: 'snapshot' | 'dispatch' | 'testConnection'
+  method: 'snapshot' | 'dispatch' | 'testConnection' | 'promptList'
   scope?: Scope
   command?: Command
   server?: McpServerRecord

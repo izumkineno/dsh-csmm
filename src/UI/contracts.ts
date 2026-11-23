@@ -1,6 +1,10 @@
 // 唯一的跨层耦合面：模型 / 视图模型 / 视图之间共享的全部类型与接口。
 // 任何一层新增对外能力，先在这里定义契约，再到各自实现里落地。
 
+import type { PromptSectionView } from '../shared/types'
+
+export type { PromptSectionView }
+
 // ---------- 作用域与标签 ----------
 export type ScopeKind = 'global' | 'workspace'
 
@@ -269,6 +273,10 @@ export interface AppState {
   trustDeclined: string[]
   modal: ModalState | null
   toasts: ToastItem[]
+  /** DSH 宿主实际组装出的提示词段（只读，来自 systemPrompt.assemble）。 */
+  dshPrompts: PromptSectionView[]
+  dshPromptsState: 'idle' | 'loading' | 'ready' | 'error'
+  dshPromptsError: string | null
   meta: Meta
   copy: CopyStrings
 }
@@ -300,6 +308,8 @@ export interface HostPort {
   load?(scope: Scope, workspaceRoot?: string): Promise<Bootstrap>
   /** 提交一条写命令；完成后视图模型会重新拉取读模型。 */
   send?(command: Record<string, unknown>, workspaceRoot?: string): Promise<void>
+  /** 读取宿主当前注册并组装出的提示词段（只读）。 */
+  listPrompts?(): Promise<PromptSectionView[]>
 }
 
 // ---------- 派生数据 ----------
@@ -431,6 +441,8 @@ export interface Actions {
   saveServer(input: ServerFormInput, editing: string): void
   openRaw(server: McpServer): void
   rawSave(): void
+  /** 读取 DSH 宿主实际注册并组装的提示词段（只读）。 */
+  loadDshPrompts(): void
   trustWorkspace(wsId: string): void
   declineTrust(wsId: string): void
   removeToast(id: number): void

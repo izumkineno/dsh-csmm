@@ -3,6 +3,7 @@ import type {
   Bootstrap,
   Command,
   ConnectionOutcome,
+  PromptSectionView,
   RpcRequest,
   Scope,
   Snapshot,
@@ -14,11 +15,12 @@ export interface RemoteHost extends HostPort {
   snapshot(scope?: Scope): Promise<Snapshot>
   dispatch(command: Command): Promise<Snapshot>
   revision(): number
+  listPrompts(): Promise<PromptSectionView[]>
 }
 
 export async function requestRpc(
   body: RpcRequest & { workspaceRoot?: string },
-): Promise<{ snapshot?: Snapshot; outcome?: ConnectionOutcome }> {
+): Promise<{ snapshot?: Snapshot; outcome?: ConnectionOutcome; prompts?: PromptSectionView[] }> {
   const response = await fetch(ROUTE, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -28,6 +30,7 @@ export async function requestRpc(
     ok?: boolean
     snapshot?: Snapshot
     outcome?: ConnectionOutcome
+    prompts?: PromptSectionView[]
     error?: { code?: string; message?: string }
   }
   if (!response.ok || payload.ok === false) {
@@ -93,6 +96,10 @@ export function createRemoteHost(snapshot: Snapshot, workspaceRoot?: string): Re
       const result = await requestRpc({ method: 'testConnection', server, workspaceRoot: root })
       if (!result.outcome) throw new Error('outcome missing from response')
       return result.outcome
+    },
+    async listPrompts() {
+      const result = await requestRpc({ method: 'promptList', workspaceRoot: root })
+      return result.prompts ?? []
     },
   }
 }

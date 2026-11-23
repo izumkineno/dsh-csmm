@@ -1,11 +1,12 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { ConnectionOutcome, RpcRequest } from '../shared/types'
+import type { ConnectionOutcome, PromptSectionView, RpcRequest } from '../shared/types'
 import type { CsmmService } from './service'
 
 export interface RpcDeps {
   service(workspaceRoot?: string): Promise<CsmmService>
   probe?(serverName: string): Promise<ConnectionOutcome>
   onChanged?(): void
+  promptList?(): Promise<PromptSectionView[]>
 }
 
 export interface RpcResult {
@@ -30,6 +31,10 @@ export async function handleRpc(
       const snapshot = service.dispatch(request.command)
       deps.onChanged?.()
       return { status: 200, body: { ok: true, snapshot } }
+    }
+    if (request.method === 'promptList') {
+      const prompts = deps.promptList ? await deps.promptList() : []
+      return { status: 200, body: { ok: true, prompts } }
     }
     if (request.method === 'testConnection') {
       if (!request.server) return fail(400, 'E_PAYLOAD', 'server is required')

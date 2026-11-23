@@ -174,6 +174,7 @@ export default function GroupEditor({ g }: { g: Group }) {
           {!sectionList.length && <div className="empty">没有匹配的提示词段。</div>}
         </details>
 
+
         <details className="res" open>
           <summary className="res-head">
             <span>MCP 服务器</span>
