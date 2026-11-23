@@ -6,7 +6,7 @@ export interface RpcDeps {
   service(workspaceRoot?: string): Promise<CsmmService>
   probe?(serverName: string): Promise<ConnectionOutcome>
   onChanged?(): void
-  promptList?(): Promise<PromptSectionView[]>
+  promptList?(sessionId?: string, presetId?: string): Promise<PromptSectionView[]>
 }
 
 export interface RpcResult {
@@ -33,7 +33,7 @@ export async function handleRpc(
       return { status: 200, body: { ok: true, snapshot } }
     }
     if (request.method === 'promptList') {
-      const prompts = deps.promptList ? await deps.promptList() : []
+      const prompts = deps.promptList ? await deps.promptList(request.sessionId, request.presetId) : []
       return { status: 200, body: { ok: true, prompts } }
     }
     if (request.method === 'testConnection') {

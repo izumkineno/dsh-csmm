@@ -5,24 +5,53 @@ import type { PromptSectionView } from '../shared/types'
 export interface SystemPromptAssembler {
   assemble?: (context?: Record<string, unknown>) => Promise<{
     sections: Array<{ name: string; text: string }>
+    contexts?: Array<{ name: string; text: string }>
+    tools?: Array<{ name: string; description?: string; parameters?: unknown }>
   }>
 }
 
 /**
- * Read the host's registered prompt sections for the current (global) scope.
- * `assemble()` runs the same read-only presentation waterfall the host uses
- * when preparing a request, so this is the closest view of what DSH actually
- * injects. It does not expose the registry itself (0.2.2-rc.2 has no listing
- * API), only the assembled result.
+ * Read the host's registered prompt sections/contexts for an assembly context.
+ * Passing the live agent (as dsh-context's sampler does) yields the same
+ * agent-scoped presentation a real request gets, including tool instruction
+ * sections; an empty context only sees global registrations.
  */
 export async function listRegisteredPrompts(
   systemPrompt: SystemPromptAssembler,
+  context: Record<string, unknown> = {},
 ): Promise<PromptSectionView[]> {
   if (!systemPrompt.assemble) return []
-  const assembly = await systemPrompt.assemble({})
-  return assembly.sections.map((section) => ({
-    name: section.name,
-    text: section.text,
-    tokens: tokenEstimate(section.text),
-  }))
+  const assembly = await systemPrompt.assemble(context)
+  const out: PromptSectionView[] = []
+  for (const section of assembly.sections ?? []) {
+    out.push({
+      name: section.name,
+      text: section.text,
+      tokens: tokenEstimate(section.text),
+      kind: 'section',
+    })
+  }
+  for (const entry of assembly.contexts ?? []) {
+    out.push({
+      name: entry.name,
+      text: entry.text,
+      tokens: tokenEstimate(entry.text),
+      kind: 'context',
+    })
+  }
+  for (const tool of assembly.tools ?? []) {
+    const text = [
+      tool.description ?? '',
+      tool.parameters === undefined ? '' : JSON.stringify(tool.parameters, null, 2),
+    ]
+      .filter((part) => part.length > 0)
+      .join('\n\n')
+    out.push({
+      name: `tool-schema:${tool.name}`,
+      text,
+      tokens: tokenEstimate(text),
+      kind: 'tool',
+    })
+  }
+  return out
 }

@@ -251,6 +251,7 @@ export function buildBootstrap(
     groups: groupsOf(store, scope),
     customs: customsOf(store, scope),
     activeGroup: { ...store.activeGroup },
+    disabledPrompts: [...(store.disabledPrompts ?? [])].sort(),
     copy: DEFAULT_COPY,
   }
 }

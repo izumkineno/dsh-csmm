@@ -217,6 +217,13 @@ export class CsmmService {
         server.tools = command.tools
         return
       }
+      case 'prompt.toggle': {
+        const next = new Set(doc.disabledPrompts ?? [])
+        if (command.disabled) next.add(command.name)
+        else next.delete(command.name)
+        doc.disabledPrompts = [...next].sort()
+        return
+      }
       case 'trust.set':
         return
       default:
@@ -270,6 +277,12 @@ export class CsmmService {
       customs: [...global.customs, ...(workspace?.customs ?? [])],
       skills: [...global.skills, ...(workspace?.skills ?? [])],
       servers: [...global.servers, ...(workspace?.servers ?? [])],
+      disabledPrompts: [
+        ...new Set([
+          ...(global.disabledPrompts ?? []),
+          ...(workspace?.disabledPrompts ?? []),
+        ]),
+      ].sort(),
     }
     return { doc, global, workspace }
   }
@@ -285,6 +298,7 @@ export class CsmmService {
       groups: chainFor(doc, scope).flatMap((sc) => doc.groups.filter((g) => sameScope(g.scope, sc))),
       customs: chainFor(doc, scope).flatMap((sc) => doc.customs.filter((c) => sameScope(c.scope, sc))),
       activeGroup: { ...doc.activeGroup },
+      disabledPrompts: [...(doc.disabledPrompts ?? [])].sort(),
       copy: DEFAULT_COPY,
     }
   }

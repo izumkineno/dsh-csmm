@@ -155,21 +155,39 @@ function InspectorView() {
           {state.dshPromptsState === 'error' && (
             <div className="empty">读取失败：{state.dshPromptsError ?? '未知错误'}</div>
           )}
-          {state.dshPromptsState === 'ready' && state.dshPrompts.map((p, i) => (
-            <details key={p.name + ':' + i} className="pv-block" data-dsh-prompt={p.name}>
-              <summary className="res-head">
-                <span className="n">{p.name}</span>
-                <span className="muted">{p.tokens} tok</span>
-              </summary>
-              <pre className="dsh-prompt-text">{p.text}</pre>
-            </details>
-          ))}
+          {state.dshPromptsState === 'ready' && state.dshPrompts.map((p, i) => {
+            const off = state.disabledPrompts.includes(p.name)
+            return (
+              <details key={p.name + ':' + i} className={'pv-block' + (off ? ' off' : '')} data-dsh-prompt={p.name}>
+                <summary className="res-head">
+                  {p.kind === 'section' ? (
+                    <input
+                      type="checkbox"
+                      className="custom-check"
+                      data-dsh-toggle={p.name}
+                      checked={!off}
+                      title="关闭后，此段不会注入下一轮系统提示词"
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={() => actions.toggleDshPrompt(p.name, !off)}
+                    />
+                  ) : (
+                    <span className="tag muted" title="运行上下文与工具定义属于宿主必需项，不提供关闭">只读</span>
+                  )}
+                  <span className="n">{p.name}</span>
+                  <span className="tag">{p.kind === 'context' ? '上下文' : p.kind === 'tool' ? '工具定义' : '提示词段'}</span>
+                  {off && <span className="tag bad">已禁用</span>}
+                  <span className="muted">{p.tokens} tok</span>
+                </summary>
+                <pre className="dsh-prompt-text">{p.text}</pre>
+              </details>
+            )
+          })}
           {state.dshPromptsState === 'ready' && !state.dshPrompts.length && (
             <div className="empty">宿主没有返回任何提示词段。</div>
           )}
           <div className="inspector-foot">
-            <span className="muted">只读 · systemPrompt.assemble()</span>
-            <span className="muted">共 {state.dshPrompts.length} 段</span>
+            <span className="muted">systemPrompt.assemble() · 可逐段关闭</span>
+            <span className="muted">共 {state.dshPrompts.length} 项 · 可关闭 {state.dshPrompts.filter((p) => p.kind === 'section').length} 段 · 已禁用 {state.disabledPrompts.length}</span>
             <button className="btn small" onClick={() => actions.loadDshPrompts()}>刷新</button>
           </div>
         </div>

@@ -2,7 +2,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { WorkspaceRecord } from '../shared/types'
 import { createRpcHandler } from './http'
-import { registerAgentPrompts, registerAgentSkills, type AgentLike, type WorkspaceRegistryLike } from './materialize'
+import { registerAgentPromptFilter, registerAgentPrompts, registerAgentSkills, type AgentLike, type WorkspaceRegistryLike } from './materialize'
 import { globalPaths, workspacePaths, type ScopePaths } from './paths'
 import { loadSections } from './sections'
 import { CsmmService, type WorkspaceBinding } from './service'
@@ -22,6 +22,21 @@ interface HostContext {
 
 interface SessionStoreLike {
   get?: (id: string) => { header?: { cwd?: string } } | undefined
+}
+
+interface AgentRowLike {
+  id?: string
+  session?: { id?: string }
+  model?: { current?: () => unknown }
+}
+
+interface AgentsApi {
+  list?: () => AgentRowLike[]
+}
+
+interface AgentPresetsApi {
+  remoteExportList?: () => Promise<{ presets: Array<{ id: string; isDefault?: boolean }> }>
+  acquireScope?: (id: string) => Promise<{ key: unknown; [Symbol.asyncDispose]?: () => Promise<void> }>
 }
 
 interface RouteServer {
@@ -48,6 +63,7 @@ export function apply(ctx: HostContext): void {
       return Promise.all([
         registerAgentPrompts(agent, options),
         registerAgentSkills(agent, options),
+        registerAgentPromptFilter(agent, options),
       ]).then((disposers) => () => {
         for (const dispose of disposers) {
           if (typeof dispose === 'function') dispose()
@@ -69,10 +85,55 @@ export function apply(ctx: HostContext): void {
 
   const handler = createRpcHandler({
     service: (workspaceRoot) => openService(ctx, workspaceRoot),
-    promptList: async () => {
+    promptList: async (sessionId, presetId) => {
       const systemPrompt = lookup<SystemPromptAssembler>(ctx, 'systemPrompt')
       if (!systemPrompt) return []
-      return listRegisteredPrompts(systemPrompt)
+      const agents = lookup<AgentsApi>(ctx, 'agents')
+      let agent: AgentRowLike | undefined
+      try {
+        const rows = agents?.list?.() ?? []
+        agent = sessionId
+          ? rows.find((row) => row.id === sessionId || row.session?.id === sessionId)
+          : rows[0]
+      } catch {
+        agent = undefined
+      }
+      if (agent) {
+        const context: Record<string, unknown> = {
+          agent,
+          scope: agent,
+          modelSelection: agent.model?.current?.(),
+        }
+        return listRegisteredPrompts(systemPrompt, context)
+      }
+      // No live agent: assemble the default preset scope, which is what a new
+      // session would receive (tool instruction sections live there).
+      const presets = lookup<AgentPresetsApi>(ctx, 'agentPresets')
+      const scope = await (async () => {
+        try {
+          const listed = await presets?.remoteExportList?.()
+          const id =
+            presetId ??
+            listed?.presets.find((row) => row.isDefault)?.id ??
+            listed?.presets[0]?.id
+          if (!id) return undefined
+          return await presets?.acquireScope?.(id)
+        } catch {
+          return undefined
+        }
+      })()
+      try {
+        return await listRegisteredPrompts(
+          systemPrompt,
+          scope ? { scope: scope.key } : {},
+        )
+      } finally {
+        try {
+          await scope?.[Symbol.asyncDispose]?.()
+        } catch {
+          // releasing a read-only scope must not fail the read
+        }
+      }
     },
   })
   const registerRoute = (): (() => void) | void =>

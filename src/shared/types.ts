@@ -129,6 +129,7 @@ export interface StoreDocument {
   customs: CustomPromptRecord[]
   skills: SkillRecord[]
   servers: McpServerRecord[]
+  disabledPrompts?: string[]
 }
 
 export interface ServerSecrets {
@@ -166,6 +167,7 @@ export interface Bootstrap {
   groups: GroupRecord[]
   customs: CustomPromptRecord[]
   activeGroup: Record<string, string>
+  disabledPrompts: string[]
   copy: CopyStrings
 }
 
@@ -221,13 +223,15 @@ export type Command =
   | (WriteBase & { type: 'mcp.toggle'; scope: Scope; name: string })
   | (WriteBase & { type: 'mcp.delete'; scope: Scope; name: string })
   | (WriteBase & { type: 'mcp.tools'; scope: Scope; name: string; tools: ToolRecord[] })
+  | (WriteBase & { type: 'prompt.toggle'; scope: Scope; name: string; disabled: boolean })
   | { type: 'trust.set'; workspaceId: string; trusted: boolean; expectedRevision?: number }
 
-/** One prompt section returned by the host's live `systemPrompt.assemble()` read. */
+/** One prompt section/context returned by the host's live `systemPrompt.assemble()` read. */
 export interface PromptSectionView {
   name: string
   text: string
   tokens: number
+  kind: 'section' | 'context' | 'tool'
 }
 
 export interface RpcRequest {
@@ -235,6 +239,8 @@ export interface RpcRequest {
   scope?: Scope
   command?: Command
   server?: McpServerRecord
+  sessionId?: string
+  presetId?: string
 }
 
 export interface RpcError {

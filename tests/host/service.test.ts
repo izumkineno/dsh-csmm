@@ -282,3 +282,25 @@ test('custom, skill copy and mcp commands persist through dispatch', () => {
   assert.equal(workspace.bootstrap.servers.length, 0)
   assert.equal(service.snapshot({ kind: 'global' }).bootstrap.customs.length, 0)
 })
+
+test('prompt.toggle persists disabled sections per scope', () => {
+  const { service } = makeService()
+  service.dispatch(saveGroup(0))
+  const added = service.dispatch({
+    type: 'prompt.toggle',
+    scope: { kind: 'global' },
+    name: 'tool:grep',
+    disabled: true,
+    expectedRevision: 1,
+  })
+  assert.deepEqual(added.bootstrap.disabledPrompts, ['tool:grep'])
+  assert.equal(added.revision, 2)
+  const removed = service.dispatch({
+    type: 'prompt.toggle',
+    scope: { kind: 'global' },
+    name: 'tool:grep',
+    disabled: false,
+    expectedRevision: 2,
+  })
+  assert.deepEqual(removed.bootstrap.disabledPrompts, [])
+})

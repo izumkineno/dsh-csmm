@@ -134,6 +134,31 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
             })
           })
       },
+      toggleDshPrompt(name, disabled) {
+        if (!host.send) {
+          toast('宿主未提供提示词写入接口')
+          return
+        }
+        const s = stateRef.current
+        const root = workspaceRoot(s)
+        const scope = { ...s.scope }
+        mutate((cur) => {
+          const next = new Set(cur.disabledPrompts)
+          if (disabled) next.add(name)
+          else next.delete(name)
+          cur.disabledPrompts = [...next].sort()
+        })
+        void host
+          .send({ type: 'prompt.toggle', scope, name, disabled }, root ?? '')
+          .then(async () => {
+            if (!host.listPrompts) return
+            const prompts = await host.listPrompts()
+            setState((prev) => ({ ...prev, dshPrompts: prompts }))
+          })
+          .catch((err: unknown) => {
+            toast('保存失败：' + (err instanceof Error ? err.message : String(err)))
+          })
+      },
     }
   }, [mutate, host])
 

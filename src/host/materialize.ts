@@ -26,6 +26,7 @@ export interface AgentLike {
   ctx?: {
     systemPrompt?: SystemPromptLike
     skills?: SkillsLike
+    on?: (event: string, listener: (...args: any[]) => unknown) => (() => void) | void
     get?: (name: string) => unknown
   }
 }
@@ -118,6 +119,68 @@ export async function registerAgentSkills(
       }
     }
   }
+}
+
+/**
+ * Register a per-agent `system-prompt/assemble` waterfall that drops sections
+ * disabled in the effective scope. Contexts and this plugin's own section are
+ * always kept; `complete: true` sections are restored by the host and cannot be
+ * removed here. Disabled names are read from the store on every assembly so a
+ * committed toggle is visible on the next turn without extra bookkeeping.
+ */
+export async function registerAgentPromptFilter(
+  agent: AgentLike,
+  options: MaterializeOptions = {},
+): Promise<(() => void) | undefined> {
+  const target = await resolveAgentTarget(agent, options)
+  if (!target || typeof agent.ctx?.on !== 'function') return undefined
+  const listener = async (
+    _assembly: unknown,
+    _context: unknown,
+    next: () => Promise<unknown>,
+  ): Promise<unknown> => {
+    const current = await next()
+    try {
+      const disabled = disabledPrompts(target)
+      if (disabled.size === 0) return current
+      const value = current as {
+        sections?: Array<{ name?: string }>
+        contexts?: Array<{ name?: string }>
+      }
+      if (!Array.isArray(value.sections)) return current
+      const protectedNames = new Set<string>(
+        (value.contexts ?? [])
+          .map((entry) => entry.name)
+          .filter((name): name is string => typeof name === 'string'),
+      )
+      const sections = value.sections.filter((section) => {
+        const name = section?.name
+        if (typeof name !== 'string' || name.length === 0) return true
+        if (protectedNames.has(name) || name.startsWith('dsh-csmm:')) return true
+        return !disabled.has(name)
+      })
+      if (sections.length === value.sections.length) return current
+      return { ...(current as object), sections }
+    } catch {
+      return current
+    }
+  }
+  const off = agent.ctx.on('system-prompt/assemble', listener)
+  return typeof off === 'function' ? off : undefined
+}
+
+/** Union of the global and current-workspace disabled section names. */
+export function disabledPrompts(target: AgentTarget): Set<string> {
+  const names = new Set<string>(loadStore(globalPaths(target.home)).disabledPrompts ?? [])
+  if (target.workspaceId && target.cwd) {
+    try {
+      const workspace = loadStore(workspacePaths(target.cwd, target.workspaceId))
+      for (const name of workspace.disabledPrompts ?? []) names.add(name)
+    } catch {
+      // missing workspace store is simply an empty disabled set
+    }
+  }
+  return names
 }
 
 interface AgentTarget {

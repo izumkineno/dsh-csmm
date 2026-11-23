@@ -15,7 +15,7 @@ export interface RemoteHost extends HostPort {
   snapshot(scope?: Scope): Promise<Snapshot>
   dispatch(command: Command): Promise<Snapshot>
   revision(): number
-  listPrompts(): Promise<PromptSectionView[]>
+  listPrompts(sessionId?: string): Promise<PromptSectionView[]>
 }
 
 export async function requestRpc(
@@ -97,8 +97,8 @@ export function createRemoteHost(snapshot: Snapshot, workspaceRoot?: string): Re
       if (!result.outcome) throw new Error('outcome missing from response')
       return result.outcome
     },
-    async listPrompts() {
-      const result = await requestRpc({ method: 'promptList', workspaceRoot: root })
+    async listPrompts(sessionId?: string, presetId?: string) {
+      const result = await requestRpc({ method: 'promptList', sessionId, presetId, workspaceRoot: root })
       return result.prompts ?? []
     },
   }

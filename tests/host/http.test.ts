@@ -76,13 +76,13 @@ test('testConnection is honest when the host has no probe', async () => {
 test('promptList returns the host assembly and degrades to empty', async () => {
   const service = makeService()
   const result = await handleRpc(
-    { ...deps(service), promptList: async () => [{ name: 'p', text: 'hello', tokens: 2 }] },
+    { ...deps(service), promptList: async () => [{ name: 'p', text: 'hello', tokens: 2, kind: 'section' as const }] },
     { method: 'promptList' },
   )
   assert.equal(result.status, 200)
   const body = result.body as { ok: boolean; prompts: Array<{ name: string; tokens: number }> }
   assert.equal(body.ok, true)
-  assert.deepEqual(body.prompts, [{ name: 'p', text: 'hello', tokens: 2 }])
+  assert.deepEqual(body.prompts, [{ name: 'p', text: 'hello', tokens: 2, kind: 'section' }])
 
   const empty = await handleRpc(deps(service), { method: 'promptList' })
   assert.deepEqual((empty.body as { prompts: unknown[] }).prompts, [])

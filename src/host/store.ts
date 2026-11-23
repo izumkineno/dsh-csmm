@@ -30,6 +30,7 @@ export function emptyStore(): StoreDocument {
     customs: [],
     skills: [],
     servers: [],
+    disabledPrompts: [],
   }
 }
 
@@ -188,5 +189,8 @@ function normalizeStore(input: unknown, file: string): StoreDocument {
     customs: Array.isArray(doc.customs) ? doc.customs : [],
     skills: Array.isArray(doc.skills) ? doc.skills : [],
     servers: Array.isArray(doc.servers) ? doc.servers : [],
+    disabledPrompts: Array.isArray(doc.disabledPrompts)
+      ? doc.disabledPrompts.filter((name): name is string => typeof name === 'string')
+      : [],
   }
 }

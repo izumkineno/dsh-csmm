@@ -274,6 +274,7 @@ export interface AppState {
   modal: ModalState | null
   toasts: ToastItem[]
   /** DSH 宿主实际组装出的提示词段（只读，来自 systemPrompt.assemble）。 */
+  disabledPrompts: string[]
   dshPrompts: PromptSectionView[]
   dshPromptsState: 'idle' | 'loading' | 'ready' | 'error'
   dshPromptsError: string | null
@@ -290,6 +291,7 @@ export interface Bootstrap {
   groups: Group[]
   customs: CustomPrompt[]
   activeGroup: Record<string, string>
+  disabledPrompts: string[]
   copy: CopyStrings
 }
 
@@ -308,8 +310,8 @@ export interface HostPort {
   load?(scope: Scope, workspaceRoot?: string): Promise<Bootstrap>
   /** 提交一条写命令；完成后视图模型会重新拉取读模型。 */
   send?(command: Record<string, unknown>, workspaceRoot?: string): Promise<void>
-  /** 读取宿主当前注册并组装出的提示词段（只读）。 */
-  listPrompts?(): Promise<PromptSectionView[]>
+  /** 读取宿主当前注册并组装出的提示词段/运行上下文（只读）。 */
+  listPrompts?(sessionId?: string, presetId?: string): Promise<PromptSectionView[]>
 }
 
 // ---------- 派生数据 ----------
@@ -443,6 +445,7 @@ export interface Actions {
   rawSave(): void
   /** 读取 DSH 宿主实际注册并组装的提示词段（只读）。 */
   loadDshPrompts(): void
+  toggleDshPrompt(name: string, disabled: boolean): void
   trustWorkspace(wsId: string): void
   declineTrust(wsId: string): void
   removeToast(id: number): void
