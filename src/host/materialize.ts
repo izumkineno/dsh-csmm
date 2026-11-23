@@ -153,17 +153,19 @@ export async function registerAgentPromptFilter(
           .filter((name): name is string => typeof name === 'string'),
       )
       const view = effectiveView(target)
-      const group = view?.group ?? null
       const selected = new Set(
-        (group?.items ?? [])
+        (view?.group.items ?? [])
           .filter((item) => item.kind === 'section')
           .map((item) => item.name),
+      )
+      const hasSelected = value.sections.some(
+        (section) => typeof section?.name === 'string' && selected.has(section.name),
       )
       const sections = value.sections.filter((section) => {
         const name = section?.name
         if (typeof name !== 'string' || name.length === 0) return true
         if (protectedNames.has(name) || name.startsWith('dsh-csmm:')) return true
-        if (group) return selected.has(name) && !disabled.has(name)
+        if (hasSelected) return selected.has(name) && !disabled.has(name)
         return !disabled.has(name)
       })
       if (sections.length === value.sections.length) return current

@@ -223,7 +223,6 @@ test('workspace skill definition shadows the global one for that agent', async (
 test('disabled prompt sections are filtered per agent', async () => {
   const home = tempDir('csmm-filter-')
   const doc = globalStore([], true)
-  doc.groups[0].items = [{ kind: 'section', name: 'harness:identity' }]
   doc.disabledPrompts = ['tool:grep', 'plan:policy']
   saveStore(globalPaths(home), doc)
 
@@ -285,34 +284,4 @@ test('a group that selects DSH sections acts as an allowlist', async () => {
   }
   const filtered = await listener!({}, {}, async () => current) as typeof current
   assert.deepEqual(filtered.sections.map((s) => s.name), ['harness:identity', 'dsh-csmm:prompts'])
-})
-
-test('an active empty group removes every non-protected prompt section', async () => {
-  const home = tempDir('csmm-empty-')
-  const doc = globalStore([], true)
-  doc.groups[0].items = []
-  saveStore(globalPaths(home), doc)
-
-  let listener: ((assembly: unknown, context: unknown, next: () => Promise<unknown>) => Promise<unknown>) | undefined
-  const agent: AgentLike = {
-    id: 'a3',
-    ctx: {
-      on: (_event: string, fn: (...args: any[]) => unknown) => {
-        listener = fn as typeof listener
-        return () => {}
-      },
-    },
-  }
-  await registerAgentPromptFilter(agent, { home, cwd: 'E:/repo' })
-  const current = {
-    sections: [
-      { name: 'harness:identity', text: 'i' },
-      { name: 'plan:policy', text: 'p' },
-      { name: 'dsh-csmm:prompts', text: 'x' },
-    ],
-    contexts: [{ name: 'working-directory:current', text: 'c' }],
-  }
-  const filtered = await listener!({}, {}, async () => current) as typeof current
-  assert.deepEqual(filtered.sections.map((s) => s.name), ['dsh-csmm:prompts'])
-  assert.deepEqual(filtered.contexts, current.contexts)
 })
