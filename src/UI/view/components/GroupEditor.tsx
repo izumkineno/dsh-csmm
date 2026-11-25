@@ -111,11 +111,19 @@ export default function GroupEditor({ g }: { g: Group }) {
   const serverList = visibleServers.filter((server) => match('mcp', server.name))
   const skillList = visibleSkills.filter((skill) => match('skill', skill.name))
   const toolList = dshTools.filter((tool) => match('tool', tool.name))
+  const toolCount = dshTools.filter((tool) => check('tool', tool.name)).length
+  const promptSelected = sectionCount + toolCount
+  const promptTotal = sections.length + dshTools.length
+  const promptTokens = selectors.groupTokens({ items: draft.filter((it) => it.kind === 'section' || it.kind === 'tool') }, state)
 
   const toggleMany = (kind: GroupItemKind, names: string[], on: boolean) => {
     names.forEach((resource) => {
       if (check(kind, resource) !== on) actions.toggleDraftCheck(g, kind, resource)
     })
+  }
+  const togglePromptAll = (on: boolean) => {
+    toggleMany('section', sectionList.map((s) => s.name), on)
+    toggleMany('tool', toolList.map((t) => t.name), on)
   }
 
   useEffect(() => {
@@ -154,10 +162,11 @@ export default function GroupEditor({ g }: { g: Group }) {
         <div className="banner">启用后只保留本组列出的项；未列入的资源不会进入生效提示词。勾选变化需点「保存」才生效。</div>
         <div className="summary-line">
           <span className="pill" id="sumSection">提示词段 {sectionCount}</span>
+          <span className="pill" id="sumTool">工具 {toolCount}</span>
           <span className="pill" id="sumMcp">MCP {counts.mcp}</span>
           <span className="pill" id="sumSkill">技能 {counts.skill}</span>
           <span className="grow"></span>
-          <span className="muted" id="sumChars" title="仅统计本组列出的提示词段、技能与 MCP，不含自定义提示词与运行上下文">组内资源 ≈ {selectors.groupTokens({ items: draft }, state)} tok</span>
+          <span className="muted" id="sumChars" title="仅统计本组列出的提示词段、工具、技能与 MCP，不含自定义提示词与运行上下文">组内资源 ≈ {selectors.groupTokens({ items: draft }, state)} tok</span>
         </div>
         {sectionCount === 0 && (counts.skill > 0 || counts.mcp > 0) && (
           <div className="note" data-empty-prompt>
@@ -192,13 +201,13 @@ export default function GroupEditor({ g }: { g: Group }) {
 
         <details className="res" open>
           <summary className="res-head">
-            <span>提示词段</span>
-            <span className="count" id="secCount">{sectionCount}/{sections.length}</span>
-            <span className="muted">{selectors.groupTokens({ items: draft.filter((it) => it.kind === 'section') }, state)} tok</span>
+            <span>提示词与工具</span>
+            <span className="count" id="secCount">{promptSelected}/{promptTotal}</span>
+            <span className="muted">{promptTokens} tok</span>
             <span className="tag" title="只放行分组列出的段，未列入的不进入提示词">白名单</span>
             <span className="spacer"></span>
-            <button className="btn tiny" onClick={(e) => { e.preventDefault(); toggleMany('section', sectionList.map((s) => s.name), true) }}>全选</button>
-            <button className="btn tiny" onClick={(e) => { e.preventDefault(); toggleMany('section', sectionList.map((s) => s.name), false) }}>清空</button>
+            <button className="btn tiny" onClick={(e) => { e.preventDefault(); togglePromptAll(true) }}>全选</button>
+            <button className="btn tiny" onClick={(e) => { e.preventDefault(); togglePromptAll(false) }}>清空</button>
           </summary>
           {sources.map((src) => {
             const list = sectionList.filter((s) => s.source === src)
