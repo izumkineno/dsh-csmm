@@ -510,6 +510,7 @@ main.col:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px;
   details.subres { margin-left: 10px; border-left: 1px solid var(--line); }
   details.subres > summary.sub-head { display: flex; align-items: center; gap: 6px; list-style: none; cursor: pointer; background: transparent; padding: 7px 10px; font-size: 10.5px; color: var(--muted); }
   details.subres > summary.sub-head::-webkit-details-marker { display: none; }
+  details.subres > summary.sub-head .spacer { flex: 1; }
   details.subres .twist { display: inline-block; font-size: 9px; line-height: 1; color: var(--faint); transform: rotate(0deg); }
   details.subres[open] > summary .twist { transform: rotate(90deg); }
   details.subres .check-row, details.subres .res-row, details.subres .empty { padding-left: 18px; }

@@ -9,6 +9,8 @@ import { useAppViewModel } from '../../viewmodel/useAppViewModel'
 
 type Filter = 'all' | 'selected' | 'unselected'
 
+const fmt = (n: number) => n.toLocaleString('en-US')
+
 function SectionSwitch(props: {
   kind?: GroupItemKind
   name: string
@@ -51,8 +53,8 @@ function SectionGroup(props: {
       <summary className={nested ? 'source-head sub-head' : 'res-head'}>
         <span className="twist" aria-hidden="true">▸</span>
         <span>{props.title}</span>
-        <span className="count">{props.selected}/{props.total}</span>
-        <span className="muted">{props.tokens} t</span>
+        <span className="count">{fmt(props.selected)}/{fmt(props.total)}</span>
+        <span className="muted">{fmt(props.tokens)} t</span>
         {props.tag && <span className="tag" title={props.tagTitle}>{props.tag}</span>}
         <span className="spacer"></span>
         {props.onAll && <button className="btn tiny" onClick={(e) => { e.preventDefault(); props.onAll?.() }}>全选</button>}
@@ -141,7 +143,8 @@ export default function GroupEditor({ g }: { g: Group }) {
   const promptSelected = sectionCount + toolCount
   const promptTotal = sections.length + dshTools.length
   const promptTokens = sectionTokens + toolTokens
-  const contextList = state.meta.sections.filter((s) => s.kind === 'context')
+  const runtimeContexts = state.dshPrompts.filter((p) => p.kind === 'context').map((p) => ({ name: p.name, tokens: p.tokens }))
+  const contextList = runtimeContexts.length ? runtimeContexts : state.meta.sections.filter((s) => s.kind === 'context')
   const contextTokens = contextList.reduce((sum, s) => sum + s.tokens, 0)
 
   const toggleMany = (kind: GroupItemKind, names: string[], on: boolean) => {
@@ -189,12 +192,12 @@ export default function GroupEditor({ g }: { g: Group }) {
       <div className="editor-body">
         <div className="banner">启用后只保留本组列出的项；未列入的资源不会进入生效提示词。勾选变化需点「保存」才生效。</div>
         <div className="summary-line">
-          <span className="pill" id="sumSection">提示词段 {sectionCount}</span>
-          <span className="pill" id="sumTool">工具 {toolCount}</span>
-          <span className="pill" id="sumMcp">MCP {counts.mcp}</span>
-          <span className="pill" id="sumSkill">技能 {counts.skill}</span>
+          <span className="pill" id="sumSection">提示词段 {fmt(sectionCount)}</span>
+          <span className="pill" id="sumTool">工具 {fmt(toolCount)}</span>
+          <span className="pill" id="sumMcp">MCP {fmt(counts.mcp)}</span>
+          <span className="pill" id="sumSkill">技能 {fmt(counts.skill)}</span>
           <span className="grow"></span>
-          <span className="muted" id="sumChars" title="仅统计本组列出的提示词段、工具、技能与 MCP，不含自定义提示词与运行上下文">组内资源 ≈ {selectors.groupTokens({ items: draft }, state)} tok</span>
+          <span className="muted" id="sumChars" title="仅统计本组列出的提示词段、工具、技能与 MCP，不含自定义提示词与运行上下文">组内资源 ≈ {fmt(selectors.groupTokens({ items: draft }, state))} t</span>
         </div>
         {sectionCount === 0 && (counts.skill > 0 || counts.mcp > 0) && (
           <div className="note" data-empty-prompt>
@@ -239,7 +242,7 @@ export default function GroupEditor({ g }: { g: Group }) {
                 onAll={() => toggleMany('section', list.map((s) => s.name), true)}
                 onClear={() => toggleMany('section', list.map((s) => s.name), false)}>
                 {list.map((s) => (
-                  <SectionSwitch key={s.name} name={s.name} label={s.name} meta={s.tokens + ' t'}
+                  <SectionSwitch key={s.name} name={s.name} label={s.name} meta={fmt(s.tokens) + ' t'}
                     checked={check('section', s.name)} onChange={() => toggle('section', s.name)} />
                 ))}
               </SectionGroup>
@@ -251,7 +254,7 @@ export default function GroupEditor({ g }: { g: Group }) {
               onAll={() => toggleMany('section', dshSections.filter((s) => match('section', s.name)).map((s) => s.name), true)}
               onClear={() => toggleMany('section', dshSections.filter((s) => match('section', s.name)).map((s) => s.name), false)}>
               {dshSections.filter((s) => match('section', s.name)).map((s) => (
-                <SectionSwitch key={s.name} name={s.name} label={s.name} meta={s.tokens + ' t'}
+                <SectionSwitch key={s.name} name={s.name} label={s.name} meta={fmt(s.tokens) + ' t'}
                   checked={check('section', s.name)} onChange={() => toggle('section', s.name)} />
               ))}
             </SectionGroup>
@@ -261,14 +264,14 @@ export default function GroupEditor({ g }: { g: Group }) {
             onAll={() => toggleMany('tool', toolList.map((t) => t.name), true)}
             onClear={() => toggleMany('tool', toolList.map((t) => t.name), false)}>
             {toolList.map((tool) => (
-              <SectionSwitch key={tool.name} kind="tool" name={tool.name} label={tool.name} meta={tool.tokens + ' t'}
+              <SectionSwitch key={tool.name} kind="tool" name={tool.name} label={tool.name} meta={fmt(tool.tokens) + ' t'}
                 checked={check('tool', tool.name)} onChange={() => toggle('tool', tool.name)} />
             ))}
             {!toolList.length && <div className="empty">没有匹配的工具定义。</div>}
           </SectionGroup>
           <SectionGroup title="运行上下文" selected={contextList.length} total={contextList.length} tokens={contextTokens} tag="只读">
             {contextList.map((s) => (
-              <CheckRow key={s.name} kind="section" name={s.name} label={s.name} meta={s.tokens + ' t'}
+              <CheckRow key={s.name} kind="section" name={s.name} label={s.name} meta={fmt(s.tokens) + ' t'}
                 checked disabled />
             ))}
           </SectionGroup>
@@ -278,8 +281,8 @@ export default function GroupEditor({ g }: { g: Group }) {
         <details className="res" open>
           <summary className="res-head">
             <span>MCP 服务器</span>
-            <span className="count" id="mcpCount">{counts.mcp}/{visibleServers.length}</span>
-            <span className="muted">{selectors.groupTokens({ items: draft.filter((it) => it.kind === 'mcp') }, state)} tok</span>
+            <span className="count" id="mcpCount">{fmt(counts.mcp)}/{fmt(visibleServers.length)}</span>
+            <span className="muted">{fmt(selectors.groupTokens({ items: draft.filter((it) => it.kind === 'mcp') }, state))} t</span>
             <span className="tag cat-mcp" title="勾选服务器会同时带上它的配对段与工具">段 + 工具成对</span>
             <span className="spacer"></span>
             <button className="btn tiny" onClick={(e) => { e.preventDefault(); toggleMany('mcp', serverList.map((s) => s.name), true) }}>全选</button>
@@ -292,7 +295,7 @@ export default function GroupEditor({ g }: { g: Group }) {
               <span className="r-ico">⚡</span>
               <span className={'status-dot ' + (srv.status === 'connected' ? 'on' : 'off')}></span>
               <span className="c-label">{srv.name}</span>
-              <span className="muted">mcp:{srv.name} · {srv.tools.length} 工具</span>
+              <span className="muted">mcp:{srv.name} · {fmt(srv.tools.length)} 工具</span>
               <button className="linkbtn" data-manage="mcp" data-name={srv.name}
                 onClick={() => actions.openDetail({ kind: 'mcp', name: srv.name })}>详情</button>
             </div>
@@ -303,8 +306,8 @@ export default function GroupEditor({ g }: { g: Group }) {
         <details className="res" open>
           <summary className="res-head">
             <span>技能</span>
-            <span className="count" id="skillCount">{counts.skill}/{visibleSkills.length}</span>
-            <span className="muted">{selectors.groupTokens({ items: draft.filter((it) => it.kind === 'skill') }, state)} tok</span>
+            <span className="count" id="skillCount">{fmt(counts.skill)}/{fmt(visibleSkills.length)}</span>
+            <span className="muted">{fmt(selectors.groupTokens({ items: draft.filter((it) => it.kind === 'skill') }, state))} t</span>
             <span className="tag">按可见性</span>
             <span className="spacer"></span>
             <button className="btn tiny" onClick={(e) => { e.preventDefault(); toggleMany('skill', skillList.map((s) => s.name), true) }}>全选</button>
