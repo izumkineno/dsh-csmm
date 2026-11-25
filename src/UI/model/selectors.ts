@@ -132,7 +132,7 @@ const SCOPE_LABEL_MAP: Record<Scope['kind'], string> = {
 }
 
 export const groupCounts = (group: Group): Record<GroupItemKind, number> => {
-  const counts: Record<GroupItemKind, number> = { section: 0, mcp: 0, skill: 0 }
+  const counts: Record<GroupItemKind, number> = { section: 0, mcp: 0, skill: 0, tool: 0 }
   for (const item of group.items) counts[item.kind] += 1
   return counts
 }
@@ -154,12 +154,20 @@ const skillTokens = (state: AppState, name: string): number => {
   return skill ? tokenEstimate(skill.text) : 0
 }
 
+const toolTokens = (state: AppState, name: string): number => {
+  const tool = state.dshPrompts.find(
+    (entry) => entry.kind === 'tool' && entry.name === 'tool-schema:' + name,
+  )
+  return tool ? tool.tokens : 0
+}
+
 export const groupTokens = (group: Pick<Group, 'items'>, state: AppState): number => {
   let total = 0
   for (const item of group.items) {
     if (item.kind === 'section') total += sectionTokens(state, item.name)
     if (item.kind === 'mcp') total += serverTokens(state, item.name)
     if (item.kind === 'skill') total += skillTokens(state, item.name)
+    if (item.kind === 'tool') total += toolTokens(state, item.name)
   }
   return total
 }
@@ -206,7 +214,7 @@ export const coveredLayers = (state: AppState): CoveredLayers => {
 export const effectiveItems = (state: AppState): EffectiveItems | null => {
   const winner = winningLayer(state)
   if (!winner.group) return null
-  const used: EffectiveItems = { section: new Set(), mcp: new Set(), skill: new Set() }
+  const used: EffectiveItems = { section: new Set(), mcp: new Set(), skill: new Set(), tool: new Set() }
   for (const item of winner.group.items) used[item.kind].add(item.name)
   return used
 }
@@ -284,6 +292,7 @@ export const itemsTokens = (items: GroupItem[], state: AppState): number => {
     if (item.kind === 'section') total += sectionTokens(state, item.name)
     if (item.kind === 'mcp') total += serverTokens(state, item.name)
     if (item.kind === 'skill') total += skillTokens(state, item.name)
+    if (item.kind === 'tool') total += toolTokens(state, item.name)
   }
   return total
 }
@@ -296,9 +305,10 @@ export const budgetBreakdown = (state: AppState): BudgetBreakdown => {
     section: 0,
     skill: 0,
     mcp: 0,
+    tool: 0,
     custom: 0,
     total: 0,
-    counts: { section: 0, mcp: 0, skill: 0 },
+    counts: { section: 0, mcp: 0, skill: 0, tool: 0 },
   }
   for (const section of state.meta.sections) {
     if (section.kind === 'context') out.context += section.tokens
@@ -309,10 +319,11 @@ export const budgetBreakdown = (state: AppState): BudgetBreakdown => {
       if (item.kind === 'section') out.section += sectionTokens(state, item.name)
       if (item.kind === 'mcp' && effServerEnabled(state, item.name)) out.mcp += serverTokens(state, item.name)
       if (item.kind === 'skill' && effSkillEnabled(state, item.name)) out.skill += skillTokens(state, item.name)
+      if (item.kind === 'tool') out.tool += toolTokens(state, item.name)
     }
   }
   for (const custom of winner.customs) out.custom += tokenEstimate(custom.text)
-  out.total = out.context + out.section + out.skill + out.mcp + out.custom
+  out.total = out.context + out.section + out.skill + out.mcp + out.tool + out.custom
   return out
 }
 

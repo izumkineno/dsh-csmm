@@ -2,7 +2,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { WorkspaceRecord } from '../shared/types'
 import { createRpcHandler } from './http'
-import { registerAgentPromptFilter, registerAgentPrompts, registerAgentSkills, type AgentLike, type WorkspaceRegistryLike } from './materialize'
+import { registerAgentPromptFilter, registerAgentPrompts, registerAgentSkills, registerAgentTools, type AgentLike, type WorkspaceRegistryLike } from './materialize'
 import { globalPaths, workspacePaths, type ScopePaths } from './paths'
 import { loadSections } from './sections'
 import { CsmmService, type WorkspaceBinding } from './service'
@@ -66,6 +66,7 @@ export function apply(ctx: HostContext): void {
             registerAgentPrompts(agent, options).catch(() => undefined),
             registerAgentSkills(agent, options).catch(() => undefined),
             registerAgentPromptFilter(agent, options).catch(() => undefined),
+            registerAgentTools(agent, options).catch(() => undefined),
           ])
           return () => {
             for (const dispose of disposers) {

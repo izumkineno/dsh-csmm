@@ -1,4 +1,5 @@
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
+import type { GroupItemKind } from '../../contracts'
 import { useAppViewModel } from '../../viewmodel/useAppViewModel'
 
 function ScopeTag({ scope }: { scope: 'global' | 'workspace' }) {
@@ -33,7 +34,7 @@ function PromptList() {
         <div className="rail-sec">分组 <span className="count">{groups.length}</span></div>
         {groups.length === 0 && <div className="sub-empty">该作用域还没有分组</div>}
         {groups.map((g) => {
-          const c = { section: 0, mcp: 0, skill: 0 }
+          const c: Record<GroupItemKind, number> = { section: 0, mcp: 0, skill: 0, tool: 0 }
           g.items.forEach((it) => { if (c[it.kind] !== undefined) c[it.kind]++ })
           const on = !!active && active.id === g.id
           const selected = state.active.kind === 'group' && state.active.id === g.id

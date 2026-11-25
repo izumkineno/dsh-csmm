@@ -7,6 +7,7 @@ import {
   registerAgentPrompts,
   registerAgentPromptFilter,
   registerAgentSkills,
+  registerAgentTools,
   SECTION_NAME,
   type AgentLike,
   type PromptSectionLike,
@@ -313,4 +314,38 @@ test('an empty group blocks every prompt section', async () => {
   const filtered = await listener!({}, {}, async () => current) as typeof current
   assert.deepEqual(filtered.sections.map((s) => s.name), ['dsh-csmm:prompts'])
   assert.deepEqual(filtered.contexts, current.contexts)
+})
+
+test('tool items restrict the agent tool set to the selected allowlist', async () => {
+  const home = tempDir('csmm-tools-')
+  const doc = globalStore([], true)
+  doc.groups[0].items = [
+    { kind: 'tool', name: 'grep' },
+    { kind: 'tool', name: 'run_code' },
+  ]
+  saveStore(globalPaths(home), doc)
+
+  const calls: Array<{ allow?: string[]; deny?: string[] }> = []
+  const agent = agentAt(tempDir('csmm-cwd-'), new FakeSystemPrompt())
+  agent.ctx = {
+    ...agent.ctx,
+    tools: { restrict: (filter) => { calls.push(filter); return () => undefined } },
+  }
+  const dispose = await registerAgentTools(agent, { home })
+  assert.deepEqual(calls, [{ allow: ['grep'] }])
+  assert.equal(typeof dispose, 'function')
+})
+
+test('a group without tool items does not restrict tools', async () => {
+  const home = tempDir('csmm-tools-')
+  saveStore(globalPaths(home), globalStore([]))
+
+  const calls: unknown[] = []
+  const agent = agentAt(tempDir('csmm-cwd-'), new FakeSystemPrompt())
+  agent.ctx = {
+    ...agent.ctx,
+    tools: { restrict: (filter) => { calls.push(filter); return () => undefined } },
+  }
+  await registerAgentTools(agent, { home })
+  assert.deepEqual(calls, [])
 })

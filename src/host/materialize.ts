@@ -19,6 +19,11 @@ export interface SystemPromptLike {
   getSectionOrder(name: string): number
 }
 
+/** The subset of the host `tools` service this plugin needs. */
+export interface ToolsLike {
+  restrict(filter: { allow?: string[]; deny?: string[] }): () => void
+}
+
 /** The subset of a live agent this plugin reads. */
 export interface AgentLike {
   id?: string
@@ -26,6 +31,7 @@ export interface AgentLike {
   ctx?: {
     systemPrompt?: SystemPromptLike
     skills?: SkillsLike
+    tools?: ToolsLike
     on?: (event: string, listener: (...args: any[]) => unknown) => (() => void) | void
     get?: (name: string) => unknown
   }
@@ -174,6 +180,33 @@ export async function registerAgentPromptFilter(
   }
   const off = agent.ctx.on('system-prompt/assemble', listener)
   return typeof off === 'function' ? off : undefined
+}
+
+/**
+ * Restrict an agent's tool definitions to the effective group's `tool` items.
+ * An empty selection means "do not restrict"; `run_code` is reserved by the
+ * host and unknown names throw, so both are skipped defensively.
+ */
+export async function registerAgentTools(
+  agent: AgentLike,
+  options: MaterializeOptions = {},
+): Promise<(() => void) | undefined> {
+  const target = await resolveAgentTarget(agent, options)
+  if (!target) return undefined
+  const tools = agent.ctx?.tools
+  if (!tools || typeof tools.restrict !== 'function') return undefined
+  try {
+    const view = effectiveView(target)
+    if (!view?.group) return undefined
+    const allow = view.group.items
+      .filter((item) => item.kind === 'tool')
+      .map((item) => item.name)
+      .filter((name) => name.length > 0 && name !== 'run_code')
+    if (allow.length === 0) return undefined
+    return tools.restrict({ allow })
+  } catch {
+    return undefined
+  }
 }
 
 /** Union of the global and current-workspace disabled section names. */

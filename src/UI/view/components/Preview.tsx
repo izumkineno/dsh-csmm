@@ -98,6 +98,13 @@ function InspectorView() {
                     expanded={expandedRow('m:' + item.name)} onToggle={rowToggle('m:' + item.name)} />
                 ))}
                 {!counts.mcp && <div className="pv-empty">没有选入 MCP 服务器。</div>}
+
+                <div className="pv-kind">工具定义 <span className="n">{counts.tool}</span></div>
+                {group.items.filter((item) => item.kind === 'tool').map((item, index) => (
+                  <ItemRow key={'t:' + item.name + index} it={item} state={state} selectors={selectors}
+                    expanded={expandedRow('t:' + item.name)} onToggle={rowToggle('t:' + item.name)} />
+                ))}
+                {!counts.tool && <div className="pv-empty">没有选入工具定义；当前不限制工具。</div>}
               </div>
             </div>
           ) : (

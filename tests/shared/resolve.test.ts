@@ -221,7 +221,7 @@ test('budget counts context, sections, enabled skills, MCP and enabled customs',
   assert.equal(result.mcp, 30)
   assert.equal(result.custom, 1)
   assert.equal(result.total, 50)
-  assert.deepEqual(result.counts, { section: 1, mcp: 1, skill: 1 })
+  assert.deepEqual(result.counts, { section: 1, mcp: 1, skill: 1, tool: 0 })
 })
 
 test('deny and shadow counts use the effective group', () => {

@@ -30,6 +30,7 @@ export const KIND_LABEL: Record<GroupItemKind, string> = {
   section: '提示词段',
   mcp: 'MCP 服务器',
   skill: '技能',
+  tool: '工具定义',
 }
 
 // ---------- 领域模型 ----------
@@ -131,7 +132,7 @@ export interface ServerFormInput {
   reconnect: ReconnectOptions
 }
 
-export type GroupItemKind = 'section' | 'mcp' | 'skill'
+export type GroupItemKind = 'section' | 'mcp' | 'skill' | 'tool'
 
 export interface GroupItem {
   kind: GroupItemKind
@@ -332,6 +333,7 @@ export interface EffectiveItems {
   section: Set<string>
   mcp: Set<string>
   skill: Set<string>
+  tool: Set<string>
 }
 
 export interface BudgetBreakdown {
@@ -339,6 +341,7 @@ export interface BudgetBreakdown {
   section: number
   skill: number
   mcp: number
+  tool: number
   custom: number
   total: number
   counts: Record<GroupItemKind, number>

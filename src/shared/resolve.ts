@@ -142,11 +142,17 @@ export interface EffectiveItems {
   section: Set<string>
   mcp: Set<string>
   skill: Set<string>
+  tool: Set<string>
 }
 
 export function effectiveItems(store: StoreDocument, scope: Scope): EffectiveItems {
   const layer = winningLayer(store, scope)
-  const items: EffectiveItems = { section: new Set(), mcp: new Set(), skill: new Set() }
+  const items: EffectiveItems = {
+    section: new Set(),
+    mcp: new Set(),
+    skill: new Set(),
+    tool: new Set(),
+  }
   for (const item of layer.group?.items ?? []) items[item.kind].add(item.name)
   return items
 }
@@ -188,7 +194,7 @@ export function budget(
     mcp: 0,
     custom: 0,
     total: 0,
-    counts: { section: 0, mcp: 0, skill: 0 },
+    counts: { section: 0, mcp: 0, skill: 0, tool: 0 },
   }
 
   result.context = sections

@@ -92,7 +92,7 @@ export interface McpServerRecord {
   reconnect?: ReconnectOptions
 }
 
-export type GroupItemKind = 'section' | 'mcp' | 'skill'
+export type GroupItemKind = 'section' | 'mcp' | 'skill' | 'tool'
 
 export interface GroupItemRecord {
   kind: GroupItemKind

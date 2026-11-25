@@ -4,11 +4,15 @@ import { SCOPE_LABEL, type Actions, type AppState, type BudgetBreakdown, type Gr
 // 参考预算：主流 200K 上下文窗口的保守估算值，仅用于提示，不代表宿主真实上限。
 export const CONTEXT_BUDGET = 200_000
 
-const SEGMENTS: Array<{ key: 'context' | 'section' | 'skill' | 'mcp' | 'custom'; label: string }> = [
+const SEGMENTS: Array<{
+  key: 'context' | 'section' | 'skill' | 'mcp' | 'tool' | 'custom'
+  label: string
+}> = [
   { key: 'context', label: '上下文' },
   { key: 'section', label: '提示词段' },
   { key: 'skill', label: '技能' },
   { key: 'mcp', label: 'MCP' },
+  { key: 'tool', label: '工具定义' },
   { key: 'custom', label: '自定义' },
 ]
 
@@ -107,6 +111,20 @@ export function ItemRow(props: {
     const off = !!skill && !selectors.effSkillEnabled(state, skill.name)
     const meta = !skill ? '缺失' : off ? '已停用 · 不计入预算' : skill.model ? '模型可调用' : '仅用户可用'
     return previewRow(it.name, skill ? skill.text : '', skill ? selectors.tokenEstimate(skill.text) : 0, meta, expanded, onToggle, off || !skill ? 'off' : 'cat-skill')
+  }
+  if (it.kind === 'tool') {
+    const tool = state.dshPrompts.find(
+      (entry) => entry.kind === 'tool' && entry.name === 'tool-schema:' + it.name,
+    )
+    return previewRow(
+      it.name,
+      tool ? tool.text : '',
+      tool ? tool.tokens : 0,
+      '工具定义',
+      expanded,
+      onToggle,
+      tool ? 'cat-tool' : 'off',
+    )
   }
   const server = selectors.resolvedServer(state, it.name)
   if (!server) return previewRow('mcp:' + it.name, '', 0, '缺失', expanded, onToggle, 'off')
