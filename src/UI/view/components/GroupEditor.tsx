@@ -106,6 +106,7 @@ export default function GroupEditor({ g }: { g: Group }) {
     if (filter === 'unselected') return !on
     return true
   }
+  const sectionCount = sections.filter((section) => check('section', section.name)).length
   const sectionList = sections.filter((section) => match('section', section.name))
   const serverList = visibleServers.filter((server) => match('mcp', server.name))
   const skillList = visibleSkills.filter((skill) => match('skill', skill.name))
@@ -152,13 +153,13 @@ export default function GroupEditor({ g }: { g: Group }) {
       <div className="editor-body">
         <div className="banner">启用后只保留本组列出的项；未列入的资源不会进入生效提示词。勾选变化需点「保存」才生效。</div>
         <div className="summary-line">
-          <span className="pill" id="sumSection">提示词段 {counts.section}</span>
+          <span className="pill" id="sumSection">提示词段 {sectionCount}</span>
           <span className="pill" id="sumMcp">MCP {counts.mcp}</span>
           <span className="pill" id="sumSkill">技能 {counts.skill}</span>
           <span className="grow"></span>
           <span className="muted" id="sumChars" title="仅统计本组列出的提示词段、技能与 MCP，不含自定义提示词与运行上下文">组内资源 ≈ {selectors.groupTokens({ items: draft }, state)} tok</span>
         </div>
-        {counts.section === 0 && (counts.skill > 0 || counts.mcp > 0) && (
+        {sectionCount === 0 && (counts.skill > 0 || counts.mcp > 0) && (
           <div className="note" data-empty-prompt>
             本组没有勾选任何提示词段：设为生效后系统提示词为空，仅保留技能与 MCP。分组白名单不区分类型，需要提示词段时请在上方一并勾选。
           </div>
@@ -192,7 +193,7 @@ export default function GroupEditor({ g }: { g: Group }) {
         <details className="res" open>
           <summary className="res-head">
             <span>提示词段</span>
-            <span className="count" id="secCount">{counts.section}/{sections.length}</span>
+            <span className="count" id="secCount">{sectionCount}/{sections.length}</span>
             <span className="muted">{selectors.groupTokens({ items: draft.filter((it) => it.kind === 'section') }, state)} tok</span>
             <span className="tag" title="只放行分组列出的段，未列入的不进入提示词">白名单</span>
             <span className="spacer"></span>
