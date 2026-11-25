@@ -192,44 +192,46 @@ export default function GroupEditor({ g }: { g: Group }) {
             const list = sectionList.filter((s) => s.source === src)
             if (!list.length) return null
             return (
-              <div key={src}>
-                <div className="source-head">{src}<span className="count">{list.filter((s) => check('section', s.name)).length}/{list.length}</span></div>
+              <details key={src} className="subres" open>
+                <summary className="source-head sub-head">{src}<span className="count">{list.filter((s) => check('section', s.name)).length}/{list.length}</span></summary>
                 {list.map((s) => (
                   <SectionSwitch key={s.name} name={s.name} label={s.name} meta={s.tokens + ' tok'}
                     checked={check('section', s.name)} onChange={() => toggle('section', s.name)} />
                 ))}
-              </div>
+              </details>
             )
           })}
           {dshSections.length > 0 && (
-            <div>
-              <div className="source-head">DSH 注册提示词<span className="count">{dshSections.filter((s) => check('section', s.name)).length}/{dshSections.length}</span></div>
+            <details className="subres" open>
+              <summary className="source-head sub-head">DSH 注册提示词<span className="count">{dshSections.filter((s) => check('section', s.name)).length}/{dshSections.length}</span></summary>
               {dshSections.filter((s) => match('section', s.name)).map((s) => (
                 <SectionSwitch key={s.name} name={s.name} label={s.name} meta={s.tokens + ' tok'}
                   checked={check('section', s.name)} onChange={() => toggle('section', s.name)} />
               ))}
-            </div>
+            </details>
           )}
-          <div>
-            <div className="source-head">
+          <details className="subres" open>
+            <summary className="source-head sub-head">
               工具定义<span className="count">{counts.tool}/{dshTools.length}</span>
               <span className="muted">{selectors.groupTokens({ items: draft.filter((it) => it.kind === 'tool') }, state)} tok</span>
               <span className="tag" title="勾选任意工具后只放行勾选项；一组都不勾选则不过滤工具">白名单</span>
               <span className="spacer"></span>
               <button className="btn tiny" onClick={(e) => { e.preventDefault(); toggleMany('tool', toolList.map((t) => t.name), true) }}>全选</button>
               <button className="btn tiny" onClick={(e) => { e.preventDefault(); toggleMany('tool', toolList.map((t) => t.name), false) }}>清空</button>
-            </div>
+            </summary>
             {toolList.map((tool) => (
               <SectionSwitch key={tool.name} kind="tool" name={tool.name} label={tool.name} meta={tool.tokens + ' tok'}
                 checked={check('tool', tool.name)} onChange={() => toggle('tool', tool.name)} />
             ))}
             {!toolList.length && <div className="empty">没有匹配的工具定义。</div>}
-          </div>
-          <div className="source-head">运行上下文</div>
-          {state.meta.sections.filter((s) => s.kind === 'context').map((s) => (
-            <CheckRow key={s.name} kind="section" name={s.name} label={s.name} meta={s.tokens + ' tok'}
-              checked disabled />
-          ))}
+          </details>
+          <details className="subres" open>
+            <summary className="source-head sub-head">运行上下文</summary>
+            {state.meta.sections.filter((s) => s.kind === 'context').map((s) => (
+              <CheckRow key={s.name} kind="section" name={s.name} label={s.name} meta={s.tokens + ' tok'}
+                checked disabled />
+            ))}
+          </details>
           {!sectionList.length && <div className="empty">没有匹配的提示词段。</div>}
         </details>
 
