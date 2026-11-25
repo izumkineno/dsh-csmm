@@ -49,7 +49,12 @@ export default function GroupEditor({ g }: { g: Group }) {
   const { state, actions, selectors } = useAppViewModel()
   const ownSections = state.meta.sections.filter((section) => section.kind === 'section')
   const dshSections = state.dshPrompts
-    .filter((p) => p.kind === 'section' && !ownSections.some((s) => s.name === p.name))
+    .filter(
+      (p) =>
+        p.kind === 'section' &&
+        !p.name.startsWith('dsh-csmm:') &&
+        !ownSections.some((s) => s.name === p.name),
+    )
     .map((p) => ({ name: p.name, source: 'DSH', tokens: p.tokens }))
   const sections = [...ownSections, ...dshSections]
   const [name, setName] = useState(g.name)

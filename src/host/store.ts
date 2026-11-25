@@ -185,12 +185,23 @@ function normalizeStore(input: unknown, file: string): StoreDocument {
     revision: typeof doc.revision === 'number' ? doc.revision : 0,
     workspaces: Array.isArray(doc.workspaces) ? doc.workspaces : [],
     activeGroup: doc.activeGroup && typeof doc.activeGroup === 'object' ? doc.activeGroup : {},
-    groups: Array.isArray(doc.groups) ? doc.groups : [],
+    groups: Array.isArray(doc.groups)
+      ? doc.groups.map((group) => ({
+          ...group,
+          items: Array.isArray(group.items)
+            ? group.items.filter(
+                (item) => !(typeof item?.name === 'string' && item.name.startsWith('dsh-csmm:')),
+              )
+            : [],
+        }))
+      : [],
     customs: Array.isArray(doc.customs) ? doc.customs : [],
     skills: Array.isArray(doc.skills) ? doc.skills : [],
     servers: Array.isArray(doc.servers) ? doc.servers : [],
     disabledPrompts: Array.isArray(doc.disabledPrompts)
-      ? doc.disabledPrompts.filter((name): name is string => typeof name === 'string')
+      ? doc.disabledPrompts.filter(
+          (name): name is string => typeof name === 'string' && !name.startsWith('dsh-csmm:'),
+        )
       : [],
   }
 }

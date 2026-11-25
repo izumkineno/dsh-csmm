@@ -24,6 +24,9 @@ export async function listRegisteredPrompts(
   const assembly = await systemPrompt.assemble(context)
   const out: PromptSectionView[] = []
   for (const section of assembly.sections ?? []) {
+    // dsh-csmm's own materialized section is an internal, always-protected
+    // section; it must not appear as a user-selectable host prompt.
+    if (section.name.startsWith('dsh-csmm:')) continue
     out.push({
       name: section.name,
       text: section.text,

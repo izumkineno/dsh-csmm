@@ -94,3 +94,28 @@ test('secrets are stored separately and normalize missing data', () => {
     assert.equal(fs.statSync(paths.secrets).mode & 0o777, 0o600)
   }
 })
+
+test('internal dsh-csmm prompt items are normalized out', () => {
+  const root = tempRoot()
+  const paths = scopePaths(root)
+  const doc = emptyStore()
+  doc.groups.push({
+    id: 'g1',
+    name: 'g',
+    scope: { kind: 'global' },
+    enabled: true,
+    items: [
+      { kind: 'section', name: 'harness:identity' },
+      { kind: 'section', name: 'dsh-csmm:prompts' },
+    ],
+  })
+  doc.disabledPrompts = ['dsh-csmm:prompts', 'tool:grep']
+  fs.writeFileSync(paths.store, JSON.stringify(doc))
+
+  const loaded = loadStore(paths)
+  assert.deepEqual(
+    loaded.groups[0].items.map((item) => item.name),
+    ['harness:identity'],
+  )
+  assert.deepEqual(loaded.disabledPrompts, ['tool:grep'])
+})
