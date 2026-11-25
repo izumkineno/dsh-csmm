@@ -31,6 +31,17 @@ function SectionSwitch(props: {
   )
 }
 
+function SubGroup(props: { summary: ReactNode; children: ReactNode }) {
+  const [open, setOpen] = useState(true)
+  return (
+    <details className="subres" open={open}
+      onToggle={(e) => { const next = e.currentTarget.open; if (next !== open) setOpen(next) }}>
+      <summary className="source-head sub-head">{props.summary}</summary>
+      {props.children}
+    </details>
+  )
+}
+
 function CheckRow(props: {
   kind: GroupItemKind
   name: string
@@ -192,46 +203,55 @@ export default function GroupEditor({ g }: { g: Group }) {
             const list = sectionList.filter((s) => s.source === src)
             if (!list.length) return null
             return (
-              <details key={src} className="subres" open>
-                <summary className="source-head sub-head">{src}<span className="count">{list.filter((s) => check('section', s.name)).length}/{list.length}</span></summary>
+              <SubGroup key={src} summary={<>
+                  <span className="twist" aria-hidden="true">▸</span>{src}
+                  <span className="count">{list.filter((s) => check('section', s.name)).length}/{list.length}</span>
+                  <span className="spacer"></span>
+                  <button className="btn tiny" onClick={(e) => { e.preventDefault(); toggleMany('section', list.map((s) => s.name), true) }}>全选</button>
+                  <button className="btn tiny" onClick={(e) => { e.preventDefault(); toggleMany('section', list.map((s) => s.name), false) }}>清空</button>
+                </>}>
                 {list.map((s) => (
                   <SectionSwitch key={s.name} name={s.name} label={s.name} meta={s.tokens + ' tok'}
                     checked={check('section', s.name)} onChange={() => toggle('section', s.name)} />
                 ))}
-              </details>
+              </SubGroup>
             )
           })}
           {dshSections.length > 0 && (
-            <details className="subres" open>
-              <summary className="source-head sub-head">DSH 注册提示词<span className="count">{dshSections.filter((s) => check('section', s.name)).length}/{dshSections.length}</span></summary>
+            <SubGroup summary={<>
+                <span className="twist" aria-hidden="true">▸</span>DSH 注册提示词
+                <span className="count">{dshSections.filter((s) => check('section', s.name)).length}/{dshSections.length}</span>
+                <span className="spacer"></span>
+                <button className="btn tiny" onClick={(e) => { e.preventDefault(); toggleMany('section', dshSections.filter((s) => match('section', s.name)).map((s) => s.name), true) }}>全选</button>
+                <button className="btn tiny" onClick={(e) => { e.preventDefault(); toggleMany('section', dshSections.filter((s) => match('section', s.name)).map((s) => s.name), false) }}>清空</button>
+              </>}>
               {dshSections.filter((s) => match('section', s.name)).map((s) => (
                 <SectionSwitch key={s.name} name={s.name} label={s.name} meta={s.tokens + ' tok'}
                   checked={check('section', s.name)} onChange={() => toggle('section', s.name)} />
               ))}
-            </details>
+            </SubGroup>
           )}
-          <details className="subres" open>
-            <summary className="source-head sub-head">
-              工具定义<span className="count">{counts.tool}/{dshTools.length}</span>
+          <SubGroup summary={<>
+              <span className="twist" aria-hidden="true">▸</span>工具定义
+              <span className="count">{counts.tool}/{dshTools.length}</span>
               <span className="muted">{selectors.groupTokens({ items: draft.filter((it) => it.kind === 'tool') }, state)} tok</span>
               <span className="tag" title="勾选任意工具后只放行勾选项；一组都不勾选则不过滤工具">白名单</span>
               <span className="spacer"></span>
               <button className="btn tiny" onClick={(e) => { e.preventDefault(); toggleMany('tool', toolList.map((t) => t.name), true) }}>全选</button>
               <button className="btn tiny" onClick={(e) => { e.preventDefault(); toggleMany('tool', toolList.map((t) => t.name), false) }}>清空</button>
-            </summary>
+            </>}>
             {toolList.map((tool) => (
               <SectionSwitch key={tool.name} kind="tool" name={tool.name} label={tool.name} meta={tool.tokens + ' tok'}
                 checked={check('tool', tool.name)} onChange={() => toggle('tool', tool.name)} />
             ))}
             {!toolList.length && <div className="empty">没有匹配的工具定义。</div>}
-          </details>
-          <details className="subres" open>
-            <summary className="source-head sub-head">运行上下文</summary>
+          </SubGroup>
+          <SubGroup summary={<><span className="twist" aria-hidden="true">▸</span>运行上下文<span className="tag">只读</span></>}>
             {state.meta.sections.filter((s) => s.kind === 'context').map((s) => (
               <CheckRow key={s.name} kind="section" name={s.name} label={s.name} meta={s.tokens + ' tok'}
                 checked disabled />
             ))}
-          </details>
+          </SubGroup>
           {!sectionList.length && <div className="empty">没有匹配的提示词段。</div>}
         </details>
 
