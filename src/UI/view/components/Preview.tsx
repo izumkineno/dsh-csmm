@@ -41,7 +41,7 @@ function InspectorView() {
 
   return (
     <div className="inspector">
-      <BudgetCard budget={budget} />
+      <BudgetCard budget={budget} contextWindow={state.contextWindow} />
 
       <div className="inspector-tabs" role="tablist" aria-label="预览视图">
         <button role="tab" aria-selected={tab === 'content'} className={'inspector-tab' + (tab === 'content' ? ' active' : '')}

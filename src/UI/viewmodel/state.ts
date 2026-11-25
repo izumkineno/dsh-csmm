@@ -24,6 +24,7 @@ export function makeInitialState(bootstrap: Bootstrap): AppState {
     modal: null,
     toasts: [],
     disabledPrompts: [...bootstrap.disabledPrompts],
+    contextWindow: bootstrap.contextWindow ?? 200_000,
     dshPrompts: [],
     dshPromptsState: 'idle',
     dshPromptsError: null,
@@ -69,6 +70,7 @@ export function cloneState(prev: AppState): AppState {
     modal: prev.modal ? ({ ...prev.modal } as ModalState) : null,
     toasts: [...prev.toasts],
     disabledPrompts: [...prev.disabledPrompts],
+    contextWindow: prev.contextWindow,
     dshPrompts: prev.dshPrompts.map((p) => ({ ...p })),
   }
 }
@@ -84,6 +86,7 @@ export function applyBootstrap(prev: AppState, bootstrap: Bootstrap): AppState {
     activeGroup: { ...bootstrap.activeGroup },
     copy: bootstrap.copy,
     disabledPrompts: [...bootstrap.disabledPrompts],
+    contextWindow: bootstrap.contextWindow ?? prev.contextWindow,
     meta: { workspaces: bootstrap.workspaces, sections: bootstrap.sections },
   }
 }

@@ -48,6 +48,8 @@ export interface ServiceOptions {
   workspace?: WorkspaceBinding
   workspaces?: WorkspaceRecord[]
   sections?: SectionRecord[]
+  /** Context window of the model used by the last conversation in this scope. */
+  contextWindow?: () => number | undefined
 }
 
 export class CsmmService {
@@ -62,6 +64,8 @@ export class CsmmService {
     const requested = this.requestedScope(scope)
     const target = this.resolveScope(requested, state)
     const bootstrap = this.buildBootstrap(state.doc, target)
+    const contextWindow = this.options.contextWindow?.()
+    if (contextWindow) bootstrap.contextWindow = contextWindow
     return { revision: state.doc.revision, bootstrap, diagnostics: this.diagnostics(state.doc, requested) }
   }
 

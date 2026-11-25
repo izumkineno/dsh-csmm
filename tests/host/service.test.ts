@@ -14,7 +14,7 @@ const sections: SectionRecord[] = [
   { name: 'working-directory:current', source: 'runtime', tokens: 5, kind: 'context', text: 'cwd' },
 ]
 
-function makeService(trusted = false) {
+function makeService(trusted = false, extra: { contextWindow?: () => number | undefined } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-csmm-svc-'))
   const global = scopePaths(path.join(root, 'global'))
   const workspace = { id: wsId, paths: scopePaths(path.join(root, 'ws', wsId)) }
@@ -23,6 +23,7 @@ function makeService(trusted = false) {
     workspace,
     workspaces: [{ id: wsId, title: 'repo', path: path.join(root, 'repo'), trusted }],
     sections,
+    ...extra,
   })
   if (trusted) {
     // seed trust through the public command path
@@ -316,4 +317,9 @@ test('prompt.toggle persists disabled sections per scope', () => {
     expectedRevision: 2,
   })
   assert.deepEqual(removed.bootstrap.disabledPrompts, [])
+})
+
+test('snapshot exposes the context window from the host provider', () => {
+  const { service } = makeService(false, { contextWindow: () => 1_000_000 })
+  assert.equal(service.snapshot({ kind: 'global' }).bootstrap.contextWindow, 1_000_000)
 })

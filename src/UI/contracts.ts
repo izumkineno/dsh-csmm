@@ -276,6 +276,7 @@ export interface AppState {
   toasts: ToastItem[]
   /** DSH 宿主实际组装出的提示词段（只读，来自 systemPrompt.assemble）。 */
   disabledPrompts: string[]
+  contextWindow: number
   dshPrompts: PromptSectionView[]
   dshPromptsState: 'idle' | 'loading' | 'ready' | 'error'
   dshPromptsError: string | null
@@ -293,6 +294,8 @@ export interface Bootstrap {
   customs: CustomPrompt[]
   activeGroup: Record<string, string>
   disabledPrompts: string[]
+  /** Model context window of the last conversation, when known. */
+  contextWindow?: number
   copy: CopyStrings
 }
 

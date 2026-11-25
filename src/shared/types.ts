@@ -168,6 +168,8 @@ export interface Bootstrap {
   customs: CustomPromptRecord[]
   activeGroup: Record<string, string>
   disabledPrompts: string[]
+  /** Model context window of the last conversation, when known. */
+  contextWindow?: number
   copy: CopyStrings
 }
 

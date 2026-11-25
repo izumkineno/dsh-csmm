@@ -4,6 +4,11 @@ import { SCOPE_LABEL, type Actions, type AppState, type BudgetBreakdown, type Gr
 // 参考预算：主流 200K 上下文窗口的保守估算值，仅用于提示，不代表宿主真实上限。
 export const CONTEXT_BUDGET = 200_000
 
+function formatWindow(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1) + 'M'
+  return Math.round(n / 1_000) + 'K'
+}
+
 const SEGMENTS: Array<{
   key: 'context' | 'section' | 'skill' | 'mcp' | 'tool' | 'custom'
   label: string
@@ -49,20 +54,20 @@ export function previewRow(
   )
 }
 
-export function BudgetCard({ budget }: { budget: BudgetBreakdown }) {
-  const pct = (budget.total / CONTEXT_BUDGET) * 100
+export function BudgetCard({ budget, contextWindow }: { budget: BudgetBreakdown; contextWindow: number }) {
+  const pct = (budget.total / contextWindow) * 100
   const level = pct >= 90 ? 'danger' : pct >= 70 ? 'warn' : 'ok'
   return (
     <section className={'budget-card ' + level} aria-label="上下文预算">
       <div className="budget-head">
         <span className="budget-title">上下文预算</span>
-        <span className="budget-num"><strong>{budget.total.toLocaleString()}</strong> / {Math.round(CONTEXT_BUDGET / 1000)}K tok</span>
+        <span className="budget-num"><strong>{budget.total.toLocaleString()}</strong> / {formatWindow(contextWindow)} tok</span>
       </div>
       <div className="budget-bar" role="img" aria-label={'生效内容构成占比，共 ' + budget.total + ' tok'}>
         {SEGMENTS.map((seg) => {
           const value = budget[seg.key]
           if (!value) return null
-          return <span key={seg.key} className={'budget-seg ' + seg.key} style={{ width: (value / CONTEXT_BUDGET) * 100 + '%' }} title={seg.label + ' ' + value + ' tok'} />
+          return <span key={seg.key} className={'budget-seg ' + seg.key} style={{ width: (value / contextWindow) * 100 + '%' }} title={seg.label + ' ' + value + ' tok'} />
         })}
         {budget.total === 0 && <span className="budget-seg empty" style={{ width: '100%' }} />}
         <span className="budget-mark" style={{ left: '70%' }} title="70% 警戒线" />

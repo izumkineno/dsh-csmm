@@ -216,7 +216,31 @@ async function openService(ctx: HostContext, workspaceRoot?: string): Promise<Cs
     ]
   }
 
-  return new CsmmService({ global, workspace, workspaces, sections: loadSections(home) })
+  return new CsmmService({
+    global,
+    workspace,
+    workspaces,
+    sections: loadSections(home),
+    contextWindow: () => lastContextWindow(ctx, workspaceRoot),
+  })
+}
+
+function lastContextWindow(ctx: HostContext, workspaceRoot?: string): number | undefined {
+  const sessions = lookup<{ list(): Array<{ header?: { cwd?: string } }> }>(ctx, 'sessions')
+  const meter = lookup<{ contextPressure(session: unknown): { contextWindow?: number } }>(ctx, 'tokenMeter')
+  if (!sessions || !meter) return undefined
+  let list = sessions.list()
+  if (workspaceRoot) {
+    const root = path.resolve(workspaceRoot).toLowerCase()
+    list = list.filter((s) => s.header?.cwd && path.resolve(s.header.cwd).toLowerCase() === root)
+  }
+  const session = list[list.length - 1]
+  if (!session) return undefined
+  try {
+    return meter.contextPressure(session).contextWindow
+  } catch {
+    return undefined
+  }
 }
 
 function lookup<T>(ctx: HostContext, name: string): T | undefined {
