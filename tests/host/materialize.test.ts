@@ -367,3 +367,27 @@ test('allow mode with no tool items denies every tool', async () => {
   await registerAgentTools(agent, { home })
   assert.deepEqual(calls, [{ allow: [] }])
 })
+
+test('a rejected allowlist falls back to denying every tool', async () => {
+  const home = tempDir('csmm-tools-')
+  const doc = globalStore([], true)
+  doc.groups[0].toolsMode = 'allow'
+  doc.groups[0].items = [{ kind: 'tool', name: 'stale-tool' }]
+  saveStore(globalPaths(home), doc)
+
+  const calls: Array<{ allow?: string[] }> = []
+  const agent = agentAt(tempDir('csmm-cwd-'), new FakeSystemPrompt())
+  agent.ctx = {
+    ...agent.ctx,
+    tools: {
+      restrict: (filter) => {
+        calls.push(filter)
+        if ((filter.allow ?? []).length > 0) throw new Error('unknown tool')
+        return () => undefined
+      },
+    },
+  }
+  const dispose = await registerAgentTools(agent, { home })
+  assert.deepEqual(calls, [{ allow: ['stale-tool'] }, { allow: [] }])
+  assert.equal(typeof dispose, 'function')
+})

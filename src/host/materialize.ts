@@ -2,6 +2,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { CustomPromptRecord, GroupRecord, McpServerRecord, SectionRecord, SkillRecord, StoreDocument } from '../shared/types'
 import { winningLayer } from '../shared/resolve'
+import { isAllowed, sectionAllowlist, toolAllowlist } from '../shared/policy'
 import { globalPaths, workspacePaths } from './paths'
 import { loadSections } from './sections'
 import { loadStore } from './store'
@@ -128,11 +129,13 @@ export async function registerAgentSkills(
 }
 
 /**
- * Register a per-agent `system-prompt/assemble` waterfall that drops sections
- * disabled in the effective scope. Contexts and this plugin's own section are
- * always kept; `complete: true` sections are restored by the host and cannot be
- * removed here. Disabled names are read from the store on every assembly so a
- * committed toggle is visible on the next turn without extra bookkeeping.
+ * Register a per-agent `system-prompt/assemble` waterfall that applies the
+ * effective group's section allowlist and the persisted disabled list.
+ *
+ * The policy is rebuilt on every assembly so a committed group toggle is
+ * visible on the next turn. `active` (not the number of selected names)
+ * decides whether the allowlist runs; contexts and this plugin's own section
+ * are always protected, and `complete: true` sections cannot be removed here.
  */
 export async function registerAgentPromptFilter(
   agent: AgentLike,
@@ -159,18 +162,13 @@ export async function registerAgentPromptFilter(
           .filter((name): name is string => typeof name === 'string'),
       )
       const view = effectiveView(target)
-      const selected = new Set(
-        (view?.group.items ?? [])
-          .filter((item) => item.kind === 'section')
-          .map((item) => item.name),
-      )
+      const allow = sectionAllowlist(view?.group)
       const sections = value.sections.filter((section) => {
         const name = section?.name
         if (typeof name !== 'string' || name.length === 0) return true
         if (protectedNames.has(name) || name.startsWith('dsh-csmm:')) return true
         if (disabled.has(name)) return false
-        if (view?.group) return selected.has(name)
-        return true
+        return isAllowed(allow, name)
       })
       if (sections.length === value.sections.length) return current
       return { ...(current as object), sections }
@@ -184,8 +182,11 @@ export async function registerAgentPromptFilter(
 
 /**
  * Restrict an agent's tool definitions to the effective group's `tool` items.
- * An empty selection means "do not restrict"; `run_code` is reserved by the
- * host and unknown names throw, so both are skipped defensively.
+ *
+ * `toolsMode: 'allow'` is the explicit takeover flag: an empty selection still
+ * calls `restrict({ allow: [] })` and denies every tool. A group without the
+ * flag is left untouched. `run_code` is reserved by the host, so it is removed
+ * defensively.
  */
 export async function registerAgentTools(
   agent: AgentLike,
@@ -197,12 +198,19 @@ export async function registerAgentTools(
   if (!tools || typeof tools.restrict !== 'function') return undefined
   try {
     const view = effectiveView(target)
-    if (!view?.group || view.group.toolsMode !== 'allow') return undefined
-    const allow = view.group.items
-      .filter((item) => item.kind === 'tool')
-      .map((item) => item.name)
-      .filter((name) => name.length > 0 && name !== 'run_code')
-    return tools.restrict({ allow })
+    const allow = toolAllowlist(view?.group)
+    if (!allow.active) return undefined
+    try {
+      return tools.restrict({ allow: allow.names })
+    } catch {
+      // A stale name in the allowlist must not silently restore every tool.
+      // Fall back to the fail-closed empty allowlist.
+      try {
+        return tools.restrict({ allow: [] })
+      } catch {
+        return undefined
+      }
+    }
   } catch {
     return undefined
   }
