@@ -197,12 +197,11 @@ export async function registerAgentTools(
   if (!tools || typeof tools.restrict !== 'function') return undefined
   try {
     const view = effectiveView(target)
-    if (!view?.group) return undefined
+    if (!view?.group || view.group.toolsMode !== 'allow') return undefined
     const allow = view.group.items
       .filter((item) => item.kind === 'tool')
       .map((item) => item.name)
       .filter((name) => name.length > 0 && name !== 'run_code')
-    if (allow.length === 0) return undefined
     return tools.restrict({ allow })
   } catch {
     return undefined

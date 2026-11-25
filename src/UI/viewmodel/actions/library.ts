@@ -5,7 +5,7 @@ import { currentGroupOf, ensureDraftItems, ensureServer, findGroup, uniqueGroupN
 
 export function createLibraryActions(
   ctx: ActionContext,
-): Pick<Actions, 'newGroup' | 'newCustom' | 'setQuery' | 'setToolQuery' | 'toggleSkillCheck' | 'setSkillSel' | 'setShowPlugin' | 'ensureDraft' | 'toggleDraftCheck' | 'addDraftItem' | 'saveGroup' | 'revertGroup' | 'setCustomDraft' | 'saveCustom' | 'toggleCustom' | 'revertCustom' | 'deleteItem' | 'setGroupItem' | 'addSkillsToGroup'> {
+): Pick<Actions, 'newGroup' | 'newCustom' | 'setQuery' | 'setToolQuery' | 'toggleSkillCheck' | 'setSkillSel' | 'setShowPlugin' | 'ensureDraft' | 'toggleDraftCheck' | 'addDraftItem' | 'saveGroup' | 'setToolsMode' | 'revertGroup' | 'setCustomDraft' | 'saveCustom' | 'toggleCustom' | 'revertCustom' | 'deleteItem' | 'setGroupItem' | 'addSkillsToGroup'> {
   const { mutate, getState, sync, pushToast } = ctx
   return {
     newGroup() {
@@ -48,12 +48,30 @@ export function createLibraryActions(
         const i = draft.findIndex((it) => it.kind === kind && it.name === name)
         if (i < 0) draft.push({ kind, name })
         else draft.splice(i, 1)
+        if (kind === 'tool') {
+          const target = findGroup(s, group.id)
+          if (target) target.toolsMode = 'allow'
+        }
       })
     },
     addDraftItem(group, kind, name) {
       mutate((s) => {
         const draft = ensureDraftItems(s, group)
         if (!selectors.hasItem(draft, kind, name)) draft.push({ kind, name })
+      })
+    },
+    setToolsMode(group, mode) {
+      mutate((s) => {
+        const target = findGroup(s, group.id)
+        if (!target) return
+        if (mode === 'allow') {
+          target.toolsMode = 'allow'
+        } else {
+          delete target.toolsMode
+          const draft = ensureDraftItems(s, target)
+          for (let i = draft.length - 1; i >= 0; i--) if (draft[i].kind === 'tool') draft.splice(i, 1)
+        }
+        pushToast(s, mode === 'allow' ? '工具白名单已启用，保存或设为生效后应用' : '工具过滤已关闭')
       })
     },
     saveGroup(group, name) {

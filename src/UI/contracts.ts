@@ -144,6 +144,7 @@ export interface Group {
   name: string
   scope: Scope
   enabled: boolean
+  toolsMode?: 'allow'
   items: GroupItem[]
 }
 
@@ -415,6 +416,7 @@ export interface Actions {
   toggleDraftCheck(group: Group, kind: GroupItemKind, name: string): void
   addDraftItem(group: Group, kind: GroupItemKind, name: string): void
   saveGroup(group: Group, name: string): void
+  setToolsMode(group: Group, mode: 'all' | 'allow'): void
   revertGroup(group: Group): void
   setCustomDraft(id: string, name: string, text: string): void
   saveCustom(custom: CustomPrompt, name: string, text: string): void

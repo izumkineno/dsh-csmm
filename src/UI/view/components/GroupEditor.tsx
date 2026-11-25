@@ -42,6 +42,7 @@ function SectionGroup(props: {
   tagTitle?: string
   onAll?: () => void
   onClear?: () => void
+  extra?: ReactNode
   nested?: boolean
   children: ReactNode
 }) {
@@ -56,6 +57,7 @@ function SectionGroup(props: {
         <span className="count">{fmt(props.selected)}/{fmt(props.total)}</span>
         <span className="muted">{fmt(props.tokens)} t</span>
         {props.tag && <span className="tag" title={props.tagTitle}>{props.tag}</span>}
+        {props.extra}
         <span className="spacer"></span>
         {props.onAll && <button className="btn tiny" onClick={(e) => { e.preventDefault(); props.onAll?.() }}>全选</button>}
         {props.onClear && <button className="btn tiny" onClick={(e) => { e.preventDefault(); props.onClear?.() }}>清空</button>}
@@ -105,12 +107,13 @@ export default function GroupEditor({ g }: { g: Group }) {
   const [name, setName] = useState(g.name)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
+  const [modeDirty, setModeDirty] = useState(false)
   useEffect(() => { actions.ensureDraft(g) }, [g.id])
   useEffect(() => { setName(g.name) }, [g.id, g.name])
-  useEffect(() => { setQuery(''); setFilter('all') }, [g.id])
+  useEffect(() => { setQuery(''); setFilter('all'); setModeDirty(false) }, [g.id])
 
   const draft = (state.drafts[selectors.draftId(g)] as GroupItem[] | undefined) || g.items
-  const dirty = name !== g.name || JSON.stringify(draft) !== JSON.stringify(g.items)
+  const dirty = modeDirty || name !== g.name || JSON.stringify(draft) !== JSON.stringify(g.items)
   const counts: Record<GroupItemKind, number> = { section: 0, mcp: 0, skill: 0, tool: 0 }
   draft.forEach((it) => { if (counts[it.kind] !== undefined) counts[it.kind]++ })
   const visibleSkills = selectors.visibleSkills(state)
@@ -118,8 +121,9 @@ export default function GroupEditor({ g }: { g: Group }) {
   const sources = selectors.groupSources(state.meta)
   const check = (kind: GroupItemKind, n: string): boolean => selectors.hasItem(draft, kind, n)
   const toggle = (kind: GroupItemKind, n: string) => actions.toggleDraftCheck(g, kind, n)
-  const onSave = () => { actions.saveGroup(g, name) }
-  const onRevert = () => { actions.revertGroup(g); setName(g.name) }
+  const onSave = () => { actions.saveGroup(g, name); setModeDirty(false) }
+  const onRevert = () => { actions.revertGroup(g); setName(g.name); setModeDirty(false) }
+  const setMode = (mode: 'all' | 'allow') => { actions.setToolsMode(g, mode); setModeDirty(true) }
 
   const needle = query.trim().toLowerCase()
   const match = (kind: GroupItemKind, resource: string): boolean => {
@@ -231,7 +235,7 @@ export default function GroupEditor({ g }: { g: Group }) {
         </div>
 
         <SectionGroup title="提示词与工具" selected={promptSelected} total={promptTotal} tokens={promptTokens}
-          tag="白名单" tagTitle="只放行分组列出的段与工具，未列入的不进入提示词"
+          tagTitle="只放行分组列出的段与工具，未列入的不进入提示词"
           onAll={() => togglePromptAll(true)} onClear={() => togglePromptAll(false)} nested={false}>
           {sources.map((src) => {
             const list = sectionList.filter((s) => s.source === src)
@@ -260,7 +264,11 @@ export default function GroupEditor({ g }: { g: Group }) {
             </SectionGroup>
           )}
           <SectionGroup title="工具定义" selected={toolCount} total={dshTools.length} tokens={toolTokens}
-            tag="白名单" tagTitle="勾选任意工具后只放行勾选项；一组都不勾选则不过滤工具"
+            tag={g.toolsMode === 'allow' ? '白名单' : '未接管'}
+            tagTitle="勾选任意工具后只放行勾选项；一组都不勾选则不过滤工具"
+            extra={g.toolsMode === 'allow'
+              ? <button className="btn tiny" onClick={(e) => { e.preventDefault(); setMode('all') }}>不过滤</button>
+              : <button className="btn tiny" onClick={(e) => { e.preventDefault(); setMode('allow') }}>接管</button>}
             onAll={() => toggleMany('tool', toolList.map((t) => t.name), true)}
             onClear={() => toggleMany('tool', toolList.map((t) => t.name), false)}>
             {toolList.map((tool) => (
@@ -353,7 +361,7 @@ export default function GroupEditor({ g }: { g: Group }) {
         <span className="grow"></span>
         {delArm
           ? <><button className="btn danger small" data-gdel="yes" onClick={() => actions.deleteItem(g, 'group')}>确认删除</button>
-              <button className="btn small" onClick={() => setDelArm(false)}>取消</button></>
+            <button className="btn small" onClick={() => setDelArm(false)}>取消</button></>
           : <button id="deleteBtn" className="btn danger" onClick={() => setDelArm(true)}>删除分组</button>}
       </div>
     </>

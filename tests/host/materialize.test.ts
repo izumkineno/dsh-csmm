@@ -319,6 +319,7 @@ test('an empty group blocks every prompt section', async () => {
 test('tool items restrict the agent tool set to the selected allowlist', async () => {
   const home = tempDir('csmm-tools-')
   const doc = globalStore([], true)
+  doc.groups[0].toolsMode = 'allow'
   doc.groups[0].items = [
     { kind: 'tool', name: 'grep' },
     { kind: 'tool', name: 'run_code' },
@@ -348,4 +349,21 @@ test('a group without tool items does not restrict tools', async () => {
   }
   await registerAgentTools(agent, { home })
   assert.deepEqual(calls, [])
+})
+
+test('allow mode with no tool items denies every tool', async () => {
+  const home = tempDir('csmm-tools-')
+  const doc = globalStore([], true)
+  doc.groups[0].toolsMode = 'allow'
+  doc.groups[0].items = []
+  saveStore(globalPaths(home), doc)
+
+  const calls: Array<{ allow?: string[] }> = []
+  const agent = agentAt(tempDir('csmm-cwd-'), new FakeSystemPrompt())
+  agent.ctx = {
+    ...agent.ctx,
+    tools: { restrict: (filter) => { calls.push(filter); return () => undefined } },
+  }
+  await registerAgentTools(agent, { home })
+  assert.deepEqual(calls, [{ allow: [] }])
 })
