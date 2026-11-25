@@ -210,6 +210,21 @@ export default function GroupEditor({ g }: { g: Group }) {
               ))}
             </div>
           )}
+          <div>
+            <div className="source-head">
+              工具定义<span className="count">{counts.tool}/{dshTools.length}</span>
+              <span className="muted">{selectors.groupTokens({ items: draft.filter((it) => it.kind === 'tool') }, state)} tok</span>
+              <span className="tag" title="勾选任意工具后只放行勾选项；一组都不勾选则不过滤工具">白名单</span>
+              <span className="spacer"></span>
+              <button className="btn tiny" onClick={(e) => { e.preventDefault(); toggleMany('tool', toolList.map((t) => t.name), true) }}>全选</button>
+              <button className="btn tiny" onClick={(e) => { e.preventDefault(); toggleMany('tool', toolList.map((t) => t.name), false) }}>清空</button>
+            </div>
+            {toolList.map((tool) => (
+              <SectionSwitch key={tool.name} kind="tool" name={tool.name} label={tool.name} meta={tool.tokens + ' tok'}
+                checked={check('tool', tool.name)} onChange={() => toggle('tool', tool.name)} />
+            ))}
+            {!toolList.length && <div className="empty">没有匹配的工具定义。</div>}
+          </div>
           <div className="source-head">运行上下文</div>
           {state.meta.sections.filter((s) => s.kind === 'context').map((s) => (
             <CheckRow key={s.name} kind="section" name={s.name} label={s.name} meta={s.tokens + ' tok'}
@@ -242,23 +257,6 @@ export default function GroupEditor({ g }: { g: Group }) {
             </div>
           ))}
           {!serverList.length && <div className="empty">没有匹配的 MCP 服务器。</div>}
-        </details>
-
-        <details className="res" open>
-          <summary className="res-head">
-            <span>工具定义</span>
-            <span className="count" id="toolCount">{counts.tool}/{dshTools.length}</span>
-            <span className="muted">{selectors.groupTokens({ items: draft.filter((it) => it.kind === 'tool') }, state)} tok</span>
-            <span className="tag" title="勾选任意工具后只放行勾选项；一组都不勾选则不过滤工具">白名单</span>
-            <span className="spacer"></span>
-            <button className="btn tiny" onClick={(e) => { e.preventDefault(); toggleMany('tool', toolList.map((t) => t.name), true) }}>全选</button>
-            <button className="btn tiny" onClick={(e) => { e.preventDefault(); toggleMany('tool', toolList.map((t) => t.name), false) }}>清空</button>
-          </summary>
-          {toolList.map((tool) => (
-            <SectionSwitch key={tool.name} kind="tool" name={tool.name} label={tool.name} meta={tool.tokens + ' tok'}
-              checked={check('tool', tool.name)} onChange={() => toggle('tool', tool.name)} />
-          ))}
-          {!toolList.length && <div className="empty">没有匹配的工具定义。</div>}
         </details>
 
         <details className="res" open>
