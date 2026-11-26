@@ -10,6 +10,8 @@ import type {
   GroupItemKind,
   McpServer,
   Meta,
+  PromptDetailKind,
+  PromptDetailView,
   Scope,
   Section,
   Selectors,
@@ -161,6 +163,28 @@ const toolTokens = (state: AppState, name: string): number => {
   return tool ? tool.tokens : 0
 }
 
+/** 只读预览：从宿主装配清单里解析全文；自有段优先于同名 DSH 注册段。 */
+export const resolvePromptDetail = (
+  state: AppState,
+  name: string,
+  kind: PromptDetailKind,
+): PromptDetailView | undefined => {
+  if (kind === 'section') {
+    const own = state.meta.sections.find((entry) => entry.name === name && entry.kind === 'section')
+    if (own) return { name, kind, source: own.source, tokens: own.tokens, text: own.text }
+    const dsh = state.dshPrompts.find((entry) => entry.name === name && entry.kind === 'section')
+    return dsh ? { name, kind, source: 'DSH', tokens: dsh.tokens, text: dsh.text } : undefined
+  }
+  if (kind === 'context') {
+    const dsh = state.dshPrompts.find((entry) => entry.name === name && entry.kind === 'context')
+    if (dsh) return { name, kind, source: 'DSH · 运行上下文', tokens: dsh.tokens, text: dsh.text }
+    const own = state.meta.sections.find((entry) => entry.name === name && entry.kind === 'context')
+    return own ? { name, kind, source: own.source, tokens: own.tokens, text: own.text } : undefined
+  }
+  const tool = state.dshPrompts.find((entry) => entry.kind === 'tool' && entry.name === 'tool-schema:' + name)
+  return tool ? { name, kind, source: 'DSH · 工具定义', tokens: tool.tokens, text: tool.text } : undefined
+}
+
 export const groupTokens = (group: Pick<Group, 'items'>, state: AppState): number => {
   let total = 0
   for (const item of group.items) {
@@ -310,8 +334,13 @@ export const budgetBreakdown = (state: AppState): BudgetBreakdown => {
     total: 0,
     counts: { section: 0, mcp: 0, skill: 0, tool: 0 },
   }
-  for (const section of state.meta.sections) {
-    if (section.kind === 'context') out.context += section.tokens
+  const contexts = state.dshPrompts.filter((entry) => entry.kind === 'context')
+  if (contexts.length) {
+    for (const entry of contexts) out.context += entry.tokens
+  } else {
+    for (const section of state.meta.sections) {
+      if (section.kind === 'context') out.context += section.tokens
+    }
   }
   if (winner.group) {
     for (const item of winner.group.items) {
@@ -355,6 +384,7 @@ export const selectors: Selectors = {
   filteredServers,
   resolvedSkill,
   resolvedServer,
+  resolvePromptDetail,
   visibleSkills,
   visibleServers,
   isTrustedWorkspace,

@@ -158,7 +158,10 @@ export function ItemRow(props: {
 export function buildEffectiveText(state: AppState, selectors: Selectors): string {
   const winner = selectors.winningLayer(state)
   const lines: string[] = []
-  const contexts = state.meta.sections.filter((section) => section.kind === 'context')
+  const dshContexts = state.dshPrompts.filter((entry) => entry.kind === 'context')
+  const contexts: Array<{ name: string; text: string }> = dshContexts.length
+    ? dshContexts
+    : state.meta.sections.filter((section) => section.kind === 'context')
   if (contexts.length) {
     lines.push('# 运行上下文')
     for (const section of contexts) lines.push('\n## ' + section.name + '\n' + section.text)

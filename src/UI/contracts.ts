@@ -168,10 +168,20 @@ export interface Active {
   id: string | null
 }
 
-export interface Detail {
-  kind: 'skill' | 'mcp'
+export type PromptDetailKind = 'section' | 'context' | 'tool'
+
+/** 只读预览的解析结果；文本直接来自宿主装配结果，不再重新请求。 */
+export interface PromptDetailView {
   name: string
+  kind: PromptDetailKind
+  source: string
+  tokens: number
+  text: string
 }
+
+export type Detail =
+  | { kind: 'skill' | 'mcp'; name: string }
+  | { kind: 'prompt'; name: string; promptKind: PromptDetailKind }
 
 export interface Selection {
   skill: string | null
@@ -378,6 +388,8 @@ export interface Selectors {
   /** 当前作用域链里可用的技能 / MCP 定义；工作区同名定义覆盖全局。 */
   resolvedSkill(state: AppState, name: string | null | undefined): Skill | undefined
   resolvedServer(state: AppState, name: string | null | undefined): McpServer | undefined
+  /** 提示词段 / 运行上下文 / 工具定义的只读全文；宿主未返回时 undefined。 */
+  resolvePromptDetail(state: AppState, name: string, kind: PromptDetailKind): PromptDetailView | undefined
   visibleSkills(state: AppState): Skill[]
   visibleServers(state: AppState): McpServer[]
   isTrustedWorkspace(meta: Meta, wsId: string | null | undefined): boolean

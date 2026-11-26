@@ -18,6 +18,7 @@ function SectionSwitch(props: {
   meta?: string
   checked: boolean
   onChange: () => void
+  onPreview?: () => void
 }) {
   const kind = props.kind ?? 'section'
   return (
@@ -29,6 +30,8 @@ function SectionSwitch(props: {
       </label>
       <label className='c-label' onClick={props.onChange}>{props.label}</label>
       {props.meta && <span className='muted'>{props.meta}</span>}
+      {props.onPreview && <button type='button' className='linkbtn' data-preview={kind} data-name={props.name}
+        onClick={props.onPreview}>预览</button>}
     </div>
   )
 }
@@ -75,9 +78,10 @@ function CheckRow(props: {
   checked?: boolean
   disabled?: boolean
   onChange?: () => void
+  onPreview?: () => void
   icon?: ReactNode
 }) {
-  const { kind, name, label, meta, checked, disabled, onChange, icon } = props
+  const { kind, name, label, meta, checked, disabled, onChange, onPreview, icon } = props
   return (
     <div className={'check-row' + (disabled ? ' resident' : '')}>
       <input type="checkbox" data-check="1" data-kind={kind} data-name={name} checked={!!checked}
@@ -85,6 +89,8 @@ function CheckRow(props: {
       {icon && <span className="r-ico">{icon}</span>}
       <label className="c-label" onClick={() => { if (!disabled) onChange?.() }}>{label}</label>
       {meta && <span className="muted">{meta}</span>}
+      {onPreview && <button type="button" className="linkbtn" data-preview={kind} data-name={name}
+        onClick={onPreview}>预览</button>}
     </div>
   )
 }
@@ -247,7 +253,8 @@ export default function GroupEditor({ g }: { g: Group }) {
                 onClear={() => toggleMany('section', list.map((s) => s.name), false)}>
                 {list.map((s) => (
                   <SectionSwitch key={s.name} name={s.name} label={s.name} meta={fmt(s.tokens) + ' t'}
-                    checked={check('section', s.name)} onChange={() => toggle('section', s.name)} />
+                    checked={check('section', s.name)} onChange={() => toggle('section', s.name)}
+                    onPreview={() => actions.openDetail({ kind: 'prompt', promptKind: 'section', name: s.name })} />
                 ))}
               </SectionGroup>
             )
@@ -259,7 +266,8 @@ export default function GroupEditor({ g }: { g: Group }) {
               onClear={() => toggleMany('section', dshSections.filter((s) => match('section', s.name)).map((s) => s.name), false)}>
               {dshSections.filter((s) => match('section', s.name)).map((s) => (
                 <SectionSwitch key={s.name} name={s.name} label={s.name} meta={fmt(s.tokens) + ' t'}
-                  checked={check('section', s.name)} onChange={() => toggle('section', s.name)} />
+                  checked={check('section', s.name)} onChange={() => toggle('section', s.name)}
+                  onPreview={() => actions.openDetail({ kind: 'prompt', promptKind: 'section', name: s.name })} />
               ))}
             </SectionGroup>
           )}
@@ -273,14 +281,16 @@ export default function GroupEditor({ g }: { g: Group }) {
             onClear={() => toggleMany('tool', toolList.map((t) => t.name), false)}>
             {toolList.map((tool) => (
               <SectionSwitch key={tool.name} kind="tool" name={tool.name} label={tool.name} meta={fmt(tool.tokens) + ' t'}
-                checked={check('tool', tool.name)} onChange={() => toggle('tool', tool.name)} />
+                checked={check('tool', tool.name)} onChange={() => toggle('tool', tool.name)}
+                onPreview={() => actions.openDetail({ kind: 'prompt', promptKind: 'tool', name: tool.name })} />
             ))}
             {!toolList.length && <div className="empty">没有匹配的工具定义。</div>}
           </SectionGroup>
           <SectionGroup title="运行上下文" selected={contextList.length} total={contextList.length} tokens={contextTokens} tag="只读">
             {contextList.map((s) => (
               <CheckRow key={s.name} kind="section" name={s.name} label={s.name} meta={fmt(s.tokens) + ' t'}
-                checked disabled />
+                checked disabled
+                onPreview={() => actions.openDetail({ kind: 'prompt', promptKind: 'context', name: s.name })} />
             ))}
           </SectionGroup>
           {!sectionList.length && <div className="empty">没有匹配的提示词段。</div>}

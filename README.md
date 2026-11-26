@@ -62,6 +62,7 @@ src/UI/       面板 MVVM（contracts ｜ model ｜ viewmodel ｜ view）
 - 每次 `dispatch` 成功后刷新 materialize；agent 级注册随 agent 释放。
 - `promptList(sessionId?, presetId?)`：有 live agent 按 agent 装配，否则按默认 preset 装配，
   返回 sections + contexts + tool schemas（`standard` 下约 144 项）。
+- 面板：提示词段 / 工具定义 / 运行上下文行尾的「预览」直接读取 `promptList` 结果，只读展示全文；运行上下文同时计入预算与「生效内容」摘要。
 
 ## 安装与运行
 
