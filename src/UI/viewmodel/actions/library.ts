@@ -1,11 +1,12 @@
 import type { Actions, CustomPrompt, Group, GroupItem } from '../../contracts'
 import { scopeKey, selectors } from '../../model/selectors'
 import type { ActionContext } from '../action-context'
-import { currentGroupOf, ensureDraftItems, ensureServer, findGroup, uniqueGroupName } from '../helpers'
+import { buildActivationGroup } from '../../../shared/group'
+import { ensureDraftItems, ensureServer, findGroup, uniqueGroupName } from '../helpers'
 
 export function createLibraryActions(
   ctx: ActionContext,
-): Pick<Actions, 'newGroup' | 'newCustom' | 'setQuery' | 'setToolQuery' | 'toggleSkillCheck' | 'setSkillSel' | 'setShowPlugin' | 'ensureDraft' | 'toggleDraftCheck' | 'addDraftItem' | 'saveGroup' | 'setToolsMode' | 'revertGroup' | 'setCustomDraft' | 'saveCustom' | 'toggleCustom' | 'revertCustom' | 'deleteItem' | 'setGroupItem' | 'addSkillsToGroup'> {
+): Pick<Actions, 'newGroup' | 'newCustom' | 'setQuery' | 'setToolQuery' | 'toggleSkillCheck' | 'setSkillSel' | 'setShowPlugin' | 'ensureDraft' | 'toggleDraftCheck' | 'addDraftItem' | 'saveGroup' | 'revertGroup' | 'setCustomDraft' | 'saveCustom' | 'toggleCustom' | 'revertCustom' | 'deleteItem'> {
   const { mutate, getState, sync, pushToast } = ctx
   return {
     newGroup() {
@@ -14,7 +15,7 @@ export function createLibraryActions(
         s.groups.push(g)
         s.active = { kind: 'group', id: g.id }
         s.detail = null
-        pushToast(s, '已创建分组（尚未生效，可编辑后设为生效）')
+        pushToast(s, '已创建配置集（尚未生效，可编辑后设为生效）')
       })
     },
     newCustom() {
@@ -22,7 +23,7 @@ export function createLibraryActions(
         const n = selectors.customsOf(s.customs, s.scope, s.meta).length + 1
         const c: CustomPrompt = { id: 'c' + Date.now(), title: '自定义 ' + n, scope: { ...s.scope }, text: '' }
         s.customs.push(c)
-        s.active = { kind: 'custom', id: c.id }
+        s.selected.prompt = { kind: 'custom', id: c.id }
         s.detail = null
       })
     },
@@ -48,10 +49,6 @@ export function createLibraryActions(
         const i = draft.findIndex((it) => it.kind === kind && it.name === name)
         if (i < 0) draft.push({ kind, name })
         else draft.splice(i, 1)
-        if (kind === 'tool') {
-          const target = findGroup(s, group.id)
-          if (target) target.toolsMode = 'allow'
-        }
       })
     },
     addDraftItem(group, kind, name) {
@@ -60,29 +57,14 @@ export function createLibraryActions(
         if (!selectors.hasItem(draft, kind, name)) draft.push({ kind, name })
       })
     },
-    setToolsMode(group, mode) {
-      mutate((s) => {
-        const target = findGroup(s, group.id)
-        if (!target) return
-        if (mode === 'allow') {
-          target.toolsMode = 'allow'
-        } else {
-          delete target.toolsMode
-          const draft = ensureDraftItems(s, target)
-          for (let i = draft.length - 1; i >= 0; i--) if (draft[i].kind === 'tool') draft.splice(i, 1)
-        }
-        pushToast(s, mode === 'allow' ? '工具白名单已启用，保存或设为生效后应用' : '工具过滤已关闭')
-      })
-    },
     saveGroup(group, name) {
       const before = getState()
       const original = findGroup(before, group.id) ?? group
       const draft = (before.drafts[selectors.draftId(group)] as GroupItem[] | undefined) ?? original.items
-      const next: Group = {
-        ...original,
-        name: (name || '').trim() || '未命名分组',
-        items: draft.map((it) => ({ kind: it.kind, name: it.name })),
-      }
+      const next: Group = buildActivationGroup(
+        { ...original, name: (name || '').trim() || '未命名配置集' },
+        draft,
+      )
       mutate((s) => {
         const target = findGroup(s, group.id)
         if (!target) return
@@ -91,7 +73,7 @@ export function createLibraryActions(
         target.items = next.items.map((it) => ({ kind: it.kind, name: it.name }))
         s.saved[target.id] = JSON.stringify(target.items)
         delete s.drafts[k]
-        pushToast(s, '分组已保存')
+        pushToast(s, '配置集已保存')
       })
       sync({ type: 'group.save', scope: next.scope, group: next, name: next.name })
     },
@@ -147,11 +129,12 @@ export function createLibraryActions(
           const idx = s.groups.findIndex((g) => g.id === group.id)
           if (idx < 0) return
           const removed = s.groups.splice(idx, 1)[0]
+          delete s.drafts[selectors.draftId(group)]
           const k = scopeKey(group.scope)
           const wasActive = s.activeGroup[k] === group.id
           if (wasActive) delete s.activeGroup[k]
           s.active = { kind: 'group', id: null }
-          pushToast(s, '已删除分组', '撤销', () => mutate((p) => {
+          pushToast(s, '已删除配置集', '撤销', () => mutate((p) => {
             p.groups.splice(Math.min(idx, p.groups.length), 0, { ...removed, scope: { ...removed.scope }, items: removed.items.map((it) => ({ ...it })) })
             if (wasActive) p.activeGroup[k] = removed.id
             p.active = { kind: 'group', id: removed.id }
@@ -161,10 +144,13 @@ export function createLibraryActions(
           const idx = s.customs.findIndex((c) => c.id === custom.id)
           if (idx < 0) return
           const removed = s.customs.splice(idx, 1)[0]
-          s.active = { kind: 'group', id: null }
+          if (s.selected.prompt?.kind === 'custom' && s.selected.prompt.id === custom.id) {
+            const rest = selectors.customsOf(s.customs, s.scope, s.meta)[0]
+            s.selected.prompt = rest ? { kind: 'custom', id: rest.id } : null
+          }
           pushToast(s, '已删除自定义', '撤销', () => mutate((p) => {
             p.customs.splice(Math.min(idx, p.customs.length), 0, { ...removed, scope: { ...removed.scope } })
-            p.active = { kind: 'custom', id: removed.id }
+            p.selected.prompt = { kind: 'custom', id: removed.id }
           }), 6000)
         }
       })
@@ -177,43 +163,5 @@ export function createLibraryActions(
       }
     },
 
-    // ---- 资源成员关系 ----
-    setGroupItem(kind, name) {
-      mutate((s) => {
-        const g = currentGroupOf(s)
-        if (!g) { pushToast(s, '当前作用域没有启用的分组'); return }
-        const draftKey = selectors.draftId(g)
-        const hasDraft = Array.isArray(s.drafts[draftKey])
-        const target = hasDraft ? (s.drafts[draftKey] as GroupItem[]) : g.items
-        const added = !selectors.hasItem(target, kind, name)
-        if (added) {
-          if (hasDraft) (s.drafts[draftKey] as GroupItem[]).push({ kind, name })
-          else g.items.push({ kind, name })
-        } else if (hasDraft) {
-          s.drafts[draftKey] = (s.drafts[draftKey] as GroupItem[]).filter((it) => !(it.kind === kind && it.name === name))
-        } else {
-          g.items = g.items.filter((it) => !(it.kind === kind && it.name === name))
-        }
-        if (!hasDraft) s.saved[g.id] = JSON.stringify(g.items)
-        pushToast(s, added ? '已加入当前分组' : '已从当前分组移除')
-      })
-    },
-    addSkillsToGroup(names) {
-      mutate((s) => {
-        const g = currentGroupOf(s)
-        if (!g) { pushToast(s, '当前作用域没有启用的分组'); return }
-        const draftKey = selectors.draftId(g)
-        const hasDraft = Array.isArray(s.drafts[draftKey])
-        const target = hasDraft ? (s.drafts[draftKey] as GroupItem[]) : g.items
-        let added = 0
-        ;(names || []).forEach((n) => {
-          if (!selectors.hasItem(target, 'skill', n)) { target.push({ kind: 'skill', name: n }); added += 1 }
-        })
-        if (!hasDraft) s.saved[g.id] = JSON.stringify(g.items)
-        pushToast(s, added
-          ? '已加入分组 ' + added + ' 项' + (hasDraft ? '（有未保存更改）' : '')
-          : '所选技能已在分组中')
-      })
-    },
   }
 }

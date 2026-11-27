@@ -10,8 +10,10 @@ import type {
   GroupItemKind,
   McpServer,
   Meta,
+  PromptCatalog,
   PromptDetailKind,
   PromptDetailView,
+  ResourceRef,
   Scope,
   Section,
   Selectors,
@@ -185,6 +187,28 @@ export const resolvePromptDetail = (
   return tool ? { name, kind, source: 'DSH · 工具定义', tokens: tool.tokens, text: tool.text } : undefined
 }
 
+export const promptCatalog = (state: AppState): PromptCatalog => {
+  const ownSections = state.meta.sections
+    .filter((entry) => entry.kind === 'section')
+    .map((entry) => ({ name: entry.name, source: entry.source, tokens: entry.tokens }))
+  const ownNames = new Set(ownSections.map((entry) => entry.name))
+  const dshSections = state.dshPrompts
+    .filter((entry) => entry.kind === 'section' && !entry.name.startsWith('dsh-csmm:') && !ownNames.has(entry.name))
+    .map((entry) => ({ name: entry.name, source: 'DSH', tokens: entry.tokens }))
+  const dshContexts = state.dshPrompts
+    .filter((entry) => entry.kind === 'context')
+    .map((entry) => ({ name: entry.name, source: 'DSH', tokens: entry.tokens }))
+  const contexts = dshContexts.length
+    ? dshContexts
+    : state.meta.sections
+      .filter((entry) => entry.kind === 'context')
+      .map((entry) => ({ name: entry.name, source: entry.source, tokens: entry.tokens }))
+  const tools = state.dshPrompts
+    .filter((entry) => entry.kind === 'tool' && entry.name.startsWith('tool-schema:'))
+    .map((entry) => ({ name: entry.name.slice('tool-schema:'.length), source: 'DSH', tokens: entry.tokens }))
+  return { sections: [...ownSections, ...dshSections], contexts, tools }
+}
+
 export const groupTokens = (group: Pick<Group, 'items'>, state: AppState): number => {
   let total = 0
   for (const item of group.items) {
@@ -310,6 +334,14 @@ export const currentGroup = (state: AppState): Group | null => {
   return id ? state.groups.find((g) => g.id === id) ?? null : null
 }
 
+/** 当前 tab 的资源选中项；分组与生效页没有资源选中项。 */
+export const currentResource = (state: AppState): ResourceRef | null => {
+  if (state.tab === 'prompt') return state.selected.prompt
+  if (state.tab === 'skill') return state.selected.skill
+  if (state.tab === 'mcp') return state.selected.mcp
+  return null
+}
+
 export const itemsTokens = (items: GroupItem[], state: AppState): number => {
   let total = 0
   for (const item of items) {
@@ -322,8 +354,9 @@ export const itemsTokens = (items: GroupItem[], state: AppState): number => {
 }
 
 /** 预算只统计真正会进入上下文的项：停用的技能 / MCP 服务器不计入。 */
-export const budgetBreakdown = (state: AppState): BudgetBreakdown => {
+export const budgetBreakdown = (state: AppState, groupOverride?: Group | null): BudgetBreakdown => {
   const winner = winningLayer(state)
+  const group = groupOverride === undefined ? winner.group : groupOverride
   const out: BudgetBreakdown = {
     context: 0,
     section: 0,
@@ -342,8 +375,8 @@ export const budgetBreakdown = (state: AppState): BudgetBreakdown => {
       if (section.kind === 'context') out.context += section.tokens
     }
   }
-  if (winner.group) {
-    for (const item of winner.group.items) {
+  if (group) {
+    for (const item of group.items) {
       out.counts[item.kind] += 1
       if (item.kind === 'section') out.section += sectionTokens(state, item.name)
       if (item.kind === 'mcp' && effServerEnabled(state, item.name)) out.mcp += serverTokens(state, item.name)
@@ -351,7 +384,12 @@ export const budgetBreakdown = (state: AppState): BudgetBreakdown => {
       if (item.kind === 'tool') out.tool += toolTokens(state, item.name)
     }
   }
-  for (const custom of winner.customs) out.custom += tokenEstimate(custom.text)
+  const customs = groupOverride === undefined
+    ? winner.customs
+    : group
+      ? customsOf(state.customs, group.scope, state.meta).filter((custom) => custom.enabled !== false)
+      : []
+  for (const custom of customs) out.custom += tokenEstimate(custom.text)
   out.total = out.context + out.section + out.skill + out.mcp + out.tool + out.custom
   return out
 }
@@ -385,11 +423,13 @@ export const selectors: Selectors = {
   resolvedSkill,
   resolvedServer,
   resolvePromptDetail,
+  promptCatalog,
   visibleSkills,
   visibleServers,
   isTrustedWorkspace,
   groupSources,
   currentGroup,
+  currentResource,
   effSkillEnabled,
   effServerEnabled,
   effToolOn,

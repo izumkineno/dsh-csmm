@@ -104,8 +104,6 @@ export interface GroupRecord {
   name: string
   scope: Scope
   enabled: boolean
-  /** 'allow' means the tool list is authoritative (even when empty); absent means no tool filtering. */
-  toolsMode?: 'allow'
   items: GroupItemRecord[]
 }
 

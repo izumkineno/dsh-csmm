@@ -69,14 +69,14 @@ export function createResourceActions(
         removeGroupRefs(s, 'skill', name, s.scope)
         s.skDelConfirm = null
         s.skillSel = s.skillSel.filter((n) => n !== name)
-        if (s.sel.skill === name) {
+        if (s.selected.skill?.kind === 'skill' && s.selected.skill.name === name) {
           const vis = selectors.visibleSkills(s)
-          s.sel.skill = vis.length ? vis[0].name : null
+          s.selected.skill = vis.length ? { kind: 'skill', name: vis[0].name } : null
         }
         pushToast(s, '已删除 ' + name + (local.scope === 'workspace' ? '（当前工作区覆盖）' : '（全局定义）'), '撤销', () => mutate((p) => {
           p.skills.splice(Math.min(idx, p.skills.length), 0, { ...removed })
           p.groups = copyGroups(snapshot)
-          p.sel.skill = name
+          p.selected.skill = { kind: 'skill', name }
         }), 6000)
       })
       if (localBefore) {
@@ -155,7 +155,7 @@ export function createResourceActions(
         })
         if (added) {
           const vis = selectors.visibleSkills(s)
-          s.sel.skill = vis.length ? vis[vis.length - 1].name : null
+          s.selected.skill = vis.length ? { kind: 'skill', name: vis[vis.length - 1].name } : null
           pushToast(s, '已添加 ' + added + ' 个技能到' + (scope.kind === 'global' ? '全局' : '当前工作区') + (skipped ? '，跳过 ' + skipped + ' 个' : ''))
         } else {
           pushToast(s, skipped ? '没有可添加的技能（当前作用域已有同名定义）' : '没有选中文件')
@@ -303,15 +303,15 @@ export function createResourceActions(
         const idx = s.servers.findIndex((x) => x === local)
         const removed = s.servers.splice(idx, 1)[0]
         removeGroupRefs(s, 'mcp', name, s.scope)
-        if (s.sel.mcp === name) {
+        if (s.selected.mcp?.kind === 'mcp' && s.selected.mcp.name === name) {
           const vis = selectors.visibleServers(s)
-          s.sel.mcp = vis.length ? vis[0].name : null
+          s.selected.mcp = vis.length ? { kind: 'mcp', name: vis[0].name } : null
         }
         s.mcpDelConfirm = null
         pushToast(s, '已删除 ' + name + (local.scope === 'workspace' ? '（当前工作区覆盖）' : '（全局定义）'), '撤销', () => mutate((p) => {
           p.servers.splice(Math.min(idx, p.servers.length), 0, copyServer(removed))
           p.groups = copyGroups(snapshot)
-          p.sel.mcp = name
+          p.selected.mcp = { kind: 'mcp', name }
         }), 6000)
       })
       if (localBefore) {

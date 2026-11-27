@@ -1,7 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { CustomPrompt, Group } from '../contracts'
 import { useAppViewModel } from '../viewmodel/useAppViewModel'
-import CustomEditor from './components/CustomEditor'
 import DetailView from './components/DetailView'
 import ErrorBoundary from './components/ErrorBoundary'
 import GroupEditor from './components/GroupEditor'
@@ -10,31 +8,34 @@ import McpPane from './components/McpPane'
 import Modals from './components/Modals'
 import PageTabs from './components/PageTabs'
 import Preview from './components/Preview'
+import PromptPane from './components/PromptPane'
 import ScopeRail from './components/ScopeRail'
 import SkillPane from './components/SkillPane'
 import Toast from './components/Toast'
 import TopBar from './components/TopBar'
+
+function EmptyEditor({ hint }: { hint: string }) {
+  return (
+    <>
+      <div className="editor-head"></div>
+      <div className="editor-body"><div className="empty">{hint}</div></div>
+      <div className="editor-foot"></div>
+    </>
+  )
+}
 
 function Editor() {
   const { state } = useAppViewModel()
   if (state.detail) return <DetailView />
   if (state.tab === 'skill') return <SkillPane />
   if (state.tab === 'mcp') return <McpPane />
-  const item: Group | CustomPrompt | undefined = state.active.kind === 'group'
+  if (state.tab === 'prompt') return <PromptPane />
+  const group = state.active.kind === 'group'
     ? state.groups.find((g) => g.id === state.active.id)
-    : state.customs.find((c) => c.id === state.active.id)
-  if (!item) {
-    return (
-      <>
-        <div className="editor-head"></div>
-        <div className="editor-body"><div className="empty">左侧选择分组或自定义。</div></div>
-        <div className="editor-foot"></div>
-      </>
-    )
-  }
-  return state.active.kind === 'group'
-    ? <GroupEditor g={item as Group} />
-    : <CustomEditor c={item as CustomPrompt} />
+    : undefined
+  return group
+    ? <GroupEditor g={group} />
+    : <EmptyEditor hint="左侧选择配置集，或新建配置集。" />
 }
 
 export default function App() {

@@ -183,9 +183,9 @@ export async function registerAgentPromptFilter(
 /**
  * Restrict an agent's tool definitions to the effective group's `tool` items.
  *
- * `toolsMode: 'allow'` is the explicit takeover flag: an empty selection still
- * calls `restrict({ allow: [] })` and denies every tool. A group without the
- * flag is left untouched. `run_code` is reserved by the host, so it is removed
+ * The group's `tool` items are the allowlist: an empty selection still calls
+ * `restrict({ allow: [] })` and denies every tool. No effective group leaves
+ * the tool set untouched. `run_code` is reserved by the host, so it is removed
  * defensively.
  */
 export async function registerAgentTools(

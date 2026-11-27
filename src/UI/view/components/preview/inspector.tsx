@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { SCOPE_LABEL, type Actions, type AppState, type BudgetBreakdown, type GroupItem, type Selectors } from '../../../contracts'
+import { SCOPE_LABEL, type Actions, type AppState, type BudgetBreakdown, type Group, type GroupItem, type Selectors } from '../../../contracts'
 
 // 参考预算：主流 200K 上下文窗口的保守估算值，仅用于提示，不代表宿主真实上限。
 export const CONTEXT_BUDGET = 200_000
@@ -155,8 +155,9 @@ export function ItemRow(props: {
   )
 }
 
-export function buildEffectiveText(state: AppState, selectors: Selectors): string {
+export function buildEffectiveText(state: AppState, selectors: Selectors, groupOverride?: Group | null): string {
   const winner = selectors.winningLayer(state)
+  const group = groupOverride === undefined ? winner.group : groupOverride
   const lines: string[] = []
   const dshContexts = state.dshPrompts.filter((entry) => entry.kind === 'context')
   const contexts: Array<{ name: string; text: string }> = dshContexts.length
@@ -166,9 +167,9 @@ export function buildEffectiveText(state: AppState, selectors: Selectors): strin
     lines.push('# 运行上下文')
     for (const section of contexts) lines.push('\n## ' + section.name + '\n' + section.text)
   }
-  if (winner.group) {
-    lines.push('# 生效分组：' + winner.group.name)
-    for (const item of winner.group.items) {
+  if (group) {
+    lines.push('# 配置集：' + group.name)
+    for (const item of group.items) {
       if (item.kind === 'section') {
         const section = state.meta.sections.find((x) => x.name === item.name)
         const dsh = section ? undefined : state.dshPrompts.find((x) => x.name === item.name)
@@ -185,7 +186,12 @@ export function buildEffectiveText(state: AppState, selectors: Selectors): strin
       }
     }
   }
-  for (const custom of winner.customs) lines.push('\n## 自定义：' + custom.title + '\n' + custom.text)
+  const customs = groupOverride === undefined
+    ? winner.customs
+    : group
+      ? selectors.customsOf(state.customs, group.scope, state.meta).filter((custom) => custom.enabled !== false)
+      : []
+  for (const custom of customs) lines.push('\n## 自定义：' + custom.title + '\n' + custom.text)
   return lines.join('\n')
 }
 
@@ -200,17 +206,17 @@ export function buildDiagnostics(state: AppState, selectors: Selectors, actions:
     out.push({
       key: 'empty-chain',
       level: 'info',
-      title: '当前作用域链没有生效分组',
-      detail: '这里只展示本层已启用的自定义提示词。在左栏选择一个分组并点「设为生效」后，会显示完整的注入内容。',
+      title: '当前作用域链没有生效配置集',
+      detail: '这里只展示本层已启用的自定义提示词。在左栏选择一个配置集并点「设为生效」后，会显示完整的注入内容。',
     })
   }
   if (group && group.items.length === 0) {
     out.push({
       key: 'empty-group',
       level: 'warn',
-      title: '生效分组是空组',
+      title: '生效配置集是空组',
       detail: '空组不会注入任何资源，模型只能看到自定义提示词。',
-      action: { label: '编辑分组', run: () => actions.setActive('group', group.id) },
+      action: { label: '编辑配置集', run: () => { actions.setTab('manage'); actions.setActive('group', group.id) } },
     })
   }
   if (group && group.items.length > 0 && !group.items.some((item) => item.kind === 'section')) {
@@ -219,19 +225,19 @@ export function buildDiagnostics(state: AppState, selectors: Selectors, actions:
       level: 'info',
       title: '本组没有包含提示词段',
       detail: '生效的系统提示词将为空，只加载技能、MCP 与自定义提示词。确认这是预期行为。',
-      action: { label: '编辑分组', run: () => actions.setActive('group', group.id) },
+      action: { label: '编辑配置集', run: () => { actions.setTab('manage'); actions.setActive('group', group.id) } },
     })
   }
   if (group) {
     for (const item of group.items) {
       if (item.kind === 'section' && !state.meta.sections.some((x) => x.name === item.name)) {
-        out.push({ key: 'missing-section:' + item.name, level: 'error', title: '分组引用了不存在的提示词段', detail: item.name + ' 当前不可用，不会注入。' })
+        out.push({ key: 'missing-section:' + item.name, level: 'error', title: '配置集引用了不存在的提示词段', detail: item.name + ' 当前不可用，不会注入。' })
       }
       if (item.kind === 'skill' && !selectors.resolvedSkill(state, item.name)) {
-        out.push({ key: 'missing-skill:' + item.name, level: 'error', title: '分组引用了不存在的技能', detail: item.name + ' 当前不可用，不会注入。' })
+        out.push({ key: 'missing-skill:' + item.name, level: 'error', title: '配置集引用了不存在的技能', detail: item.name + ' 当前不可用，不会注入。' })
       }
       if (item.kind === 'mcp' && !selectors.resolvedServer(state, item.name)) {
-        out.push({ key: 'missing-mcp:' + item.name, level: 'error', title: '分组引用了不存在的 MCP 服务器', detail: item.name + ' 当前不可用，不会注入。' })
+        out.push({ key: 'missing-mcp:' + item.name, level: 'error', title: '配置集引用了不存在的 MCP 服务器', detail: item.name + ' 当前不可用，不会注入。' })
       }
     }
     const offServers = group.items
@@ -242,7 +248,7 @@ export function buildDiagnostics(state: AppState, selectors: Selectors, actions:
       out.push({
         key: 'off-servers',
         level: 'warn',
-        title: '分组内部分 MCP 服务器已停用',
+        title: '配置集内部分 MCP 服务器已停用',
         detail: offServers.map((server) => server.name).join('、') + ' 不会向模型提供工具。',
         action: { label: '去 MCP', run: () => actions.setTab('mcp') },
       })
@@ -255,7 +261,7 @@ export function buildDiagnostics(state: AppState, selectors: Selectors, actions:
       out.push({
         key: 'off-skills',
         level: 'info',
-        title: '分组内部分技能已停用',
+        title: '配置集内部分技能已停用',
         detail: offSkills.map((skill) => skill.name).join('、') + ' 在生效集合中但当前不会加载。',
         action: { label: '去技能', run: () => actions.setTab('skill') },
       })
@@ -268,9 +274,9 @@ export function buildDiagnostics(state: AppState, selectors: Selectors, actions:
       out.push({
         key: 'down-servers',
         level: 'warn',
-        title: '分组内 MCP 服务器未连接',
+        title: '配置集内 MCP 服务器未连接',
         detail: downServers.map((server) => server.name).join('、') + ' 当前不可用，相关工具会缺席。',
-        action: { label: '查看 MCP', run: () => actions.openDetail({ kind: 'mcp', name: downServers[0].name }) },
+        action: { label: '查看 MCP', run: () => { actions.setTab('mcp'); actions.selectResource({ kind: 'mcp', name: downServers[0].name }) } },
       })
     }
   }
@@ -290,8 +296,8 @@ export function buildDiagnostics(state: AppState, selectors: Selectors, actions:
     out.push({
       key: 'shadow',
       level: 'info',
-      title: '有技能被分组遮蔽',
-      detail: shadow + ' 个可见技能不在生效分组中，因此不会进入提示词。',
+      title: '有技能被配置集遮蔽',
+      detail: shadow + ' 个可见技能不在生效配置集中，因此不会进入提示词。',
       action: { label: '查看技能', run: () => actions.setTab('skill') },
     })
   }
@@ -300,7 +306,7 @@ export function buildDiagnostics(state: AppState, selectors: Selectors, actions:
     out.push({
       key: 'covered',
       level: 'info',
-      title: '下层分组被本层覆盖',
+      title: '下层配置集被本层覆盖',
       detail: covered
         .map(({ sc, group }) => SCOPE_LABEL[sc.kind] + (sc.kind === 'global' ? '' : ' · ' + selectors.scopeTitle(sc, state.meta)) + '「' + group.name + '」')
         .join('；'),
@@ -311,7 +317,7 @@ export function buildDiagnostics(state: AppState, selectors: Selectors, actions:
       key: 'budget',
       level: pct >= 90 ? 'error' : 'warn',
       title: '上下文预算偏紧',
-      detail: '估算占用 ' + budget.total.toLocaleString() + ' tok（' + Math.round(pct) + '%）。建议减少技能或拆分分组，优先保留高信号内容。',
+      detail: '估算占用 ' + budget.total.toLocaleString() + ' tok（' + Math.round(pct) + '%）。建议减少技能或拆分配置集，优先保留高信号内容。',
     })
   }
   return out

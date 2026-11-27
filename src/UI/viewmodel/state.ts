@@ -6,7 +6,8 @@ export function makeInitialState(bootstrap: Bootstrap): AppState {
     active: { kind: 'group', id: 'g1' },
     detail: null,
     tab: 'prompt',
-    sel: { skill: null, mcp: null },
+    selected: { prompt: null, skill: null, mcp: null },
+    groupFocus: null,
     saved: {},
     activeGroup: { ...bootstrap.activeGroup },
     overrides: { skill: {}, mcp: {}, tool: {} },
@@ -45,7 +46,12 @@ export function cloneState(prev: AppState): AppState {
     scope: { ...prev.scope },
     active: { ...prev.active },
     detail: prev.detail ? { ...prev.detail } : null,
-    sel: { ...prev.sel },
+    selected: {
+      prompt: prev.selected.prompt ? { ...prev.selected.prompt } : null,
+      skill: prev.selected.skill ? { ...prev.selected.skill } : null,
+      mcp: prev.selected.mcp ? { ...prev.selected.mcp } : null,
+    },
+    groupFocus: prev.groupFocus ? { ...prev.groupFocus } : null,
     q: { ...prev.q },
     activeGroup: { ...prev.activeGroup },
     overrides: {

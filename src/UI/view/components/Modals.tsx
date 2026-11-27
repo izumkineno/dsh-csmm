@@ -1,6 +1,8 @@
 import { Fragment, useEffect, useRef, type ChangeEvent, type InputHTMLAttributes, type ReactNode } from 'react'
-import type { MigrateModal, RawModal, ServerFormModal, WorkspaceTrustModal } from '../../contracts'
+import type { GroupActivateModal, MigrateModal, RawModal, ServerFormModal, WorkspaceTrustModal } from '../../contracts'
 import { useAppViewModel } from '../../viewmodel/useAppViewModel'
+import { findGroup } from '../../viewmodel/helpers'
+import { activationImpact, buildActivationGroup } from '../../../shared/group'
 import { ServerForm } from './modals/ServerForm'
 
 function SkillAdd() {
@@ -90,6 +92,34 @@ function TrustPrompt({ m }: { m: WorkspaceTrustModal }) {
   )
 }
 
+function ActivateGroup({ m }: { m: GroupActivateModal }) {
+  const { state, actions, selectors } = useAppViewModel()
+  const group = findGroup(state, m.groupId)
+  if (!group) return <div className="hint">这个配置集已不存在，可能已在别处删除。</div>
+  const draft = state.drafts[selectors.draftId(group)]
+  const items = Array.isArray(draft) ? draft : group.items
+  const name = (m.name ?? group.name).trim() || '未命名配置集'
+  const next = buildActivationGroup({ ...group, name }, items)
+  const impact = activationImpact(next)
+  return (
+    <>
+      <div className="hint">把「{name}」设为生效后，当前作用域的提示词段与工具会按它过滤；运行上下文与插件自身提示词始终保留。</div>
+      <dl className="meta-grid">
+        <dt>配置集</dt><dd>{name}（{items.length} 项）</dd>
+        <dt>提示词段</dt><dd>{impact.sections} 个</dd>
+        <dt>工具</dt><dd>{impact.tools === 0 ? '0 个（会拒绝所有工具）' : impact.tools + ' 个（只放行勾选的）'}</dd>
+      </dl>
+      {impact.emptyGroup && <div className="note" data-impact="empty">这个配置集没有任何成员。设为生效后，除运行上下文和插件自身段外，其余提示词段都会被过滤，所有工具也会被拒绝。</div>}
+      {!impact.emptyGroup && impact.noSections && <div className="note" data-impact="no-sections">这个配置集没有提示词段。设为生效后，其余提示词段都会被过滤。</div>}
+      {!impact.emptyGroup && impact.noTools && <div className="note" data-impact="empty-tools">这个配置集没有工具。设为生效后，所有工具都会被拒绝。至少勾选一个工具后再设为生效。</div>}
+      <div className="modal-foot">
+        <button className="btn" onClick={() => actions.closeModal()}>取消</button>
+        <button className="btn primary" data-confirm-activate onClick={() => actions.confirmActivateGroup(m.groupId)}>仍然设为生效</button>
+      </div>
+    </>
+  )
+}
+
 function Raw({ m }: { m: RawModal }) {
   const { actions } = useAppViewModel()
   return (
@@ -144,6 +174,7 @@ export default function Modals() {
     migrate: '复制技能到工作区',
     serverForm: m.type === 'serverForm' && m.editing ? '编辑 MCP 服务器' : '添加 MCP 服务器',
     raw: '原始配置',
+    groupActivate: '设为生效？',
     workspaceTrust: '信任此工作区？',
   }
   return (
@@ -156,6 +187,7 @@ export default function Modals() {
           {m.type === 'migrate' && <Migrate m={m} />}
           {m.type === 'serverForm' && <ServerForm m={m} />}
           {m.type === 'raw' && <Raw m={m} />}
+          {m.type === 'groupActivate' && <ActivateGroup m={m} />}
           {m.type === 'workspaceTrust' && <TrustPrompt m={m} />}
         </div>
       </div>

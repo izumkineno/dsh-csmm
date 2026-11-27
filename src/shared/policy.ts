@@ -30,12 +30,11 @@ export function sectionAllowlist(group: GroupRecord | null | undefined): Allowli
 }
 
 /**
- * Tool definitions are only filtered after the group explicitly takes them
- * over (`toolsMode: 'allow'`). Older groups without the flag keep the host's
- * full tool set; a takeover with no selected tools denies every tool.
+ * Tool definitions are the group's whitelist. No effective group means no
+ * filtering; an effective group with no tool items denies every tool.
  */
 export function toolAllowlist(group: GroupRecord | null | undefined): Allowlist {
-  if (!group || group.toolsMode !== 'allow') return { active: false, names: [] }
+  if (!group) return { active: false, names: [] }
   return {
     active: true,
     names: namesOf(

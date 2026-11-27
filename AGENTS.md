@@ -16,7 +16,7 @@ dsh-csmm 是 DSH 插件：在全局 / 工作区两个作用域里管理提示词
 
 ```bash
 npm install
-npm test                 # tsx --test，当前 37 条
+npm test                 # tsx --test，当前 59 条
 npm run build            # 产出 dist/index.js + dist/client.js
 npm run preview:ui       # Vite 预览，经代理访问真实宿主 RPC
 npx tsc -p tsconfig.host.json --noEmit
@@ -42,11 +42,12 @@ docs/         浏览器测试矩阵、清单与 SOP
 1. **不手改 profile**：不直接编辑 profile 的 `package.json` / `cordis.patch.yml`；安装用 `dsh plugin add` 或 `plugin_manager install_bundle`。
 2. **密钥不进 store / 日志 / 快照**：密钥只写入 `secrets.json`（0600），快照只暴露 `envKeys` / `headerKeys`。
 3. **作用域只有两个**：`global` 与 `workspace:<id>`；不引入会话层。工作区同名定义覆盖全局。
-4. **空组即白名单**：存在生效组时，只有组内选中的提示词段放行；但 `contexts` 与 `dsh-csmm:*` 始终保留。
+4. **空组即白名单**：存在生效组时，只有组内选中的提示词段与工具放行；工具名单为空即拒绝全部工具；但 `contexts` 与 `dsh-csmm:*` 始终保留。
 5. **写路径受限**：只写 `$DSH_HOME/dsh-csmm/` 与 `<workspace>/.dsh/<workspace-id>/`；`.dsh/` 不入库。
 6. **契约同步**：改 RPC 或 `Command` 时，同时更新 `src/shared/types.ts`、host、client 与 UI，避免两侧漂移。
 7. **不要复活 mock**：面板数据只来自宿主 RPC；宿主不可达时显示错误与重试。
 8. **声称完成前必须实跑**：`npm test`、三份 `tsc`、`npm run build`；只报实际命令与结果。
+9. **不主动做兼容**：没有明确要求兼容旧版本 / 旧数据时，禁止添加迁移、回退、双读双写、特性探测等兼容代码；旧字段直接删，旧语义直接用新规则替换，旧数据由用户自行处理。确需兼容时先问清范围与期限。
 
 ## 提交规范
 
@@ -72,9 +73,9 @@ refactor(host): 拆分提示词注入模块
 
 ## 文档指针
 
-| 需要什么 | 去哪里 |
-|---|---|
-| 安装、存储布局、RPC、限制 | [README.md](README.md) |
-| 早期设计草案（参考） | [SPEC.md](SPEC.md) |
-| VS Code 配置类比 | [VSCODE-MAPPING.md](VSCODE-MAPPING.md) |
-| 浏览器回归测试 | [docs/BROWSER-TEST-MATRIX.md](docs/BROWSER-TEST-MATRIX.md)、[docs/TEST-CHECKLIST.md](docs/TEST-CHECKLIST.md)、[docs/BROWSER-TEST-SOP.md](docs/BROWSER-TEST-SOP.md) |
+| 需要什么                  | 去哪里                                                                                                                                                          |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 安装、存储布局、RPC、限制 | [README.md](README.md)                                                                                                                                           |
+| 早期设计草案（参考）      | [SPEC.md](SPEC.md)                                                                                                                                               |
+| VS Code 配置类比          | [VSCODE-MAPPING.md](VSCODE-MAPPING.md)                                                                                                                           |
+| 浏览器回归测试            | [docs/BROWSER-TEST-MATRIX.md](docs/BROWSER-TEST-MATRIX.md)、[docs/TEST-CHECKLIST.md](docs/TEST-CHECKLIST.md)、[docs/BROWSER-TEST-SOP.md](docs/BROWSER-TEST-SOP.md) |

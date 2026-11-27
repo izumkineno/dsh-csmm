@@ -79,7 +79,7 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
         mutate((s) => {
           s.scope = { ...scope }
           s.detail = null
-          s.sel = { skill: null, mcp: null }
+          s.selected = { prompt: null, skill: null, mcp: null }
           const gid = s.activeGroup[scopeKey(scope)]
           s.active = { kind: 'group', id: gid && s.groups.some((g) => g.id === gid && sameScope(g.scope, scope)) ? gid : null }
           if (scope.kind === 'workspace' && scope.id) {

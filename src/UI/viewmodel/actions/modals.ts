@@ -107,10 +107,10 @@ export function createModalActions(
             if (group.scope.kind !== s.scope.kind || group.scope.id !== s.scope.id) continue
             group.items = group.items.map((it) => (it.kind === 'mcp' && it.name === editing ? { kind: 'mcp', name } : it))
           }
-          if (s.sel.mcp === editing) s.sel.mcp = name
+          if (s.selected.mcp?.kind === 'mcp' && s.selected.mcp.name === editing) s.selected.mcp = { kind: 'mcp', name }
         }
         if (!local && !editing) {
-          s.sel.mcp = name
+          s.selected.mcp = { kind: 'mcp', name }
           pushToast(s, '已添加 ' + name + '，点「测试连接」拉工具清单')
         } else {
           pushToast(s, '已保存 ' + name + s.copy.serverSaved + (target.scope === 'workspace' ? '（当前工作区覆盖）' : ''))

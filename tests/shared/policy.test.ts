@@ -5,8 +5,8 @@ import type { GroupRecord } from '../../src/shared/types'
 
 const scope = { kind: 'global' as const }
 
-function group(items: GroupRecord['items'], toolsMode?: GroupRecord['toolsMode']): GroupRecord {
-  return { id: 'g', name: 'g', scope, enabled: true, items, toolsMode }
+function group(items: GroupRecord['items']): GroupRecord {
+  return { id: 'g', name: 'g', scope, enabled: true, items }
 }
 
 test('no group: section filtering is off', () => {
@@ -32,26 +32,26 @@ test('group section items are deduplicated and kept in order', () => {
   assert.deepEqual(allow.names, ['b', 'a'])
 })
 
-test('tools without explicit takeover are not filtered', () => {
-  const allow = toolAllowlist(group([{ kind: 'tool', name: 'grep' }]))
+test('no group: tool filtering is off', () => {
+  const allow = toolAllowlist(undefined)
   assert.equal(allow.active, false)
   assert.equal(isAllowed(allow, 'grep'), true)
 })
 
-test('tools takeover with no selection denies every tool', () => {
-  const allow = toolAllowlist(group([], 'allow'))
+test('empty tool list denies every tool', () => {
+  const allow = toolAllowlist(group([]))
   assert.equal(allow.active, true)
   assert.deepEqual(allow.names, [])
   assert.equal(isAllowed(allow, 'grep'), false)
 })
 
-test('tools takeover keeps selected tools and drops run_code / blanks', () => {
+test('selected tools are kept and run_code / blanks are dropped', () => {
   const allow = toolAllowlist(group([
     { kind: 'tool', name: 'grep' },
     { kind: 'tool', name: 'run_code' },
     { kind: 'tool', name: '' },
     { kind: 'tool', name: 'grep' },
-  ], 'allow'))
+  ]))
   assert.deepEqual(allow.names, ['grep'])
   assert.equal(isAllowed(allow, 'grep'), true)
   assert.equal(isAllowed(allow, 'bash'), false)

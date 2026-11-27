@@ -1,8 +1,10 @@
 import { useAppViewModel } from '../../viewmodel/useAppViewModel'
+import GroupStatus from './GroupStatus'
 
 export default function McpPane() {
   const { state, actions, selectors } = useAppViewModel()
-  const srv = selectors.resolvedServer(state, state.sel.mcp)
+  const srvName = state.selected.mcp?.kind === 'mcp' ? state.selected.mcp.name : null
+  const srv = selectors.resolvedServer(state, srvName)
   if (!srv) {
     return (
       <>
@@ -11,13 +13,11 @@ export default function McpPane() {
             <span>{selectors.scopeCrumb(state.scope, state.meta)}</span><span className="sep">›</span><span>MCP 服务器</span>
           </div>
         </div>
-        <div className="editor-body"><div className="empty">左侧选择一个服务器。这里测试连接、维护工具白名单与认证。</div></div>
+        <div className="editor-body"><div className="empty">左侧选择一个服务器。这里测试连接、维护工具白名单与认证；配置集归属在「配置集与生效」页编辑。</div></div>
         <div className="editor-foot"></div>
       </>
     )
   }
-  const group = selectors.currentGroup(state)
-  const inGroup = !!group && selectors.hasItem(group.items, 'mcp', srv.name)
   const on = srv.status === 'connected' && selectors.effServerEnabled(state, srv.name)
   const local = srv.scope === 'workspace' && state.scope.kind === 'workspace'
   const inherited = srv.scope === 'global' && state.scope.kind === 'workspace'
@@ -45,6 +45,7 @@ export default function McpPane() {
         <dl className="meta-grid">
           <dt>配对段</dt><dd>mcp:{srv.name} · {srv.tokens} tok</dd>
           <dt>工具</dt><dd>{srv.tools.length} 个（{disabledCount} deny）</dd>
+          <dt>配置集</dt><dd><GroupStatus kind="mcp" name={srv.name} /></dd>
           <dt>进程</dt><dd>常驻</dd>
           <dt>配置</dt><dd>{srv.transport === 'stdio' ? 'stdio · ' + srv.command : 'http · ' + srv.url}</dd>
         </dl>
@@ -82,7 +83,7 @@ export default function McpPane() {
           <button className="btn small" data-mcpraw onClick={() => actions.openRaw(srv)}>查看原文</button>
           {srv.auth === 'oauth' && <button className="btn small" data-mcpoauth onClick={() => actions.oauthToggle(srv.name)}>{srv.oauth ? '断开登录' : 'OAuth 登录'}</button>}
           <button className="btn small" data-restart onClick={() => actions.restartConnection()}>重启连接</button>
-          {group && <button className="btn small" data-groupitem onClick={() => actions.setGroupItem('mcp', srv.name)}>{inGroup ? '从分组移除' : '加入分组'}</button>}
+          <button className="btn small" data-editgroup onClick={() => actions.editInGroup('mcp', srv.name)}>在配置集中编辑</button>
           {state.mcpDelConfirm === srv.name
             ? <><button className="btn danger small" data-mcpdel="yes" onClick={() => actions.deleteMcp(srv.name)}>{local ? '确认删除' : '确认停用'}</button>
                 <button className="btn small" onClick={() => actions.setMcpDelConfirm(null)}>取消</button></>

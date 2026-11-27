@@ -76,8 +76,8 @@ export const removeGroupRefs = (s: AppState, kind: GroupItemKind, name: string, 
 export const uniqueGroupName = (s: AppState): string => {
   let n = selectors.groupsOf(s.groups, s.scope, s.meta).length + 1
   const names = new Set(selectors.groupsOf(s.groups, s.scope, s.meta).map((g) => g.name))
-  while (names.has('分组 ' + n)) n += 1
-  return '分组 ' + n
+  while (names.has('配置集 ' + n)) n += 1
+  return '配置集 ' + n
 }
 
 export const mergeIntoGroup = (s: AppState, group: Group, kind: GroupItemKind, name: string, add: boolean): void => {

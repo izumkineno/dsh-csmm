@@ -319,7 +319,6 @@ test('an empty group blocks every prompt section', async () => {
 test('tool items restrict the agent tool set to the selected allowlist', async () => {
   const home = tempDir('csmm-tools-')
   const doc = globalStore([], true)
-  doc.groups[0].toolsMode = 'allow'
   doc.groups[0].items = [
     { kind: 'tool', name: 'grep' },
     { kind: 'tool', name: 'run_code' },
@@ -337,26 +336,9 @@ test('tool items restrict the agent tool set to the selected allowlist', async (
   assert.equal(typeof dispose, 'function')
 })
 
-test('a group without tool items does not restrict tools', async () => {
+test('a group without tool items denies every tool', async () => {
   const home = tempDir('csmm-tools-')
   saveStore(globalPaths(home), globalStore([]))
-
-  const calls: unknown[] = []
-  const agent = agentAt(tempDir('csmm-cwd-'), new FakeSystemPrompt())
-  agent.ctx = {
-    ...agent.ctx,
-    tools: { restrict: (filter) => { calls.push(filter); return () => undefined } },
-  }
-  await registerAgentTools(agent, { home })
-  assert.deepEqual(calls, [])
-})
-
-test('allow mode with no tool items denies every tool', async () => {
-  const home = tempDir('csmm-tools-')
-  const doc = globalStore([], true)
-  doc.groups[0].toolsMode = 'allow'
-  doc.groups[0].items = []
-  saveStore(globalPaths(home), doc)
 
   const calls: Array<{ allow?: string[] }> = []
   const agent = agentAt(tempDir('csmm-cwd-'), new FakeSystemPrompt())
@@ -371,7 +353,6 @@ test('allow mode with no tool items denies every tool', async () => {
 test('a rejected allowlist falls back to denying every tool', async () => {
   const home = tempDir('csmm-tools-')
   const doc = globalStore([], true)
-  doc.groups[0].toolsMode = 'allow'
   doc.groups[0].items = [{ kind: 'tool', name: 'stale-tool' }]
   saveStore(globalPaths(home), doc)
 
@@ -391,3 +372,183 @@ test('a rejected allowlist falls back to denying every tool', async () => {
   assert.deepEqual(calls, [{ allow: ['stale-tool'] }, { allow: [] }])
   assert.equal(typeof dispose, 'function')
 })
+test('no effective group leaves the tool set untouched', async () => {
+  const home = tempDir('csmm-tools-')
+  const doc = globalStore([], true)
+  doc.activeGroup = { 'global:': '' }
+  saveStore(globalPaths(home), doc)
+
+  const calls: Array<{ allow?: string[] }> = []
+  const agent = agentAt(tempDir('csmm-cwd-'), new FakeSystemPrompt())
+  agent.ctx = {
+    ...agent.ctx,
+    tools: { restrict: (filter) => { calls.push(filter); return () => undefined } },
+  }
+  const dispose = await registerAgentTools(agent, { home })
+  assert.equal(dispose, undefined)
+  assert.deepEqual(calls, [])
+})
+
+test('a sections-only group denies every tool', async () => {
+  const home = tempDir('csmm-tools-')
+  const doc = globalStore([], true)
+  doc.groups[0]!.items = [{ kind: 'section', name: 'core' }]
+  saveStore(globalPaths(home), doc)
+
+  const calls: Array<{ allow?: string[] }> = []
+  const agent = agentAt(tempDir('csmm-cwd-'), new FakeSystemPrompt())
+  agent.ctx = {
+    ...agent.ctx,
+    tools: { restrict: (filter) => { calls.push(filter); return () => undefined } },
+  }
+  await registerAgentTools(agent, { home })
+  assert.deepEqual(calls, [{ allow: [] }])
+})
+
+test('selecting only the reserved run_code name denies every tool', async () => {
+  const home = tempDir('csmm-tools-')
+  const doc = globalStore([], true)
+  doc.groups[0]!.items = [{ kind: 'tool', name: 'run_code' }]
+  saveStore(globalPaths(home), doc)
+
+  const calls: Array<{ allow?: string[] }> = []
+  const agent = agentAt(tempDir('csmm-cwd-'), new FakeSystemPrompt())
+  agent.ctx = {
+    ...agent.ctx,
+    tools: { restrict: (filter) => { calls.push(filter); return () => undefined } },
+  }
+  await registerAgentTools(agent, { home })
+  assert.deepEqual(calls, [{ allow: [] }])
+})
+
+test('a legacy toolsMode flag is ignored and cannot restore tools', async () => {
+  const home = tempDir('csmm-tools-')
+  const doc = globalStore([], true)
+  doc.groups[0] = {
+    ...doc.groups[0]!,
+    items: [],
+    toolsMode: 'allow',
+  } as unknown as GroupRecord
+  saveStore(globalPaths(home), doc)
+  assert.match(fs.readFileSync(globalPaths(home).store, 'utf8'), /"toolsMode": "allow"/)
+
+  const calls: Array<{ allow?: string[] }> = []
+  const agent = agentAt(tempDir('csmm-cwd-'), new FakeSystemPrompt())
+  agent.ctx = {
+    ...agent.ctx,
+    tools: { restrict: (filter) => { calls.push(filter); return () => undefined } },
+  }
+  await registerAgentTools(agent, { home })
+  assert.deepEqual(calls, [{ allow: [] }])
+})
+
+test('a trusted workspace inherits the global tool allowlist', async () => {
+  const home = tempDir('csmm-tools-')
+  const root = tempDir('csmm-cwd-')
+  const doc = globalStore([], true)
+  doc.groups[0]!.items = [{ kind: 'tool', name: 'grep' }]
+  saveStore(globalPaths(home), doc)
+  saveStore(workspacePaths(root, 'w1'), emptyStore())
+
+  const calls: Array<{ allow?: string[] }> = []
+  const agent = agentAt(root, new FakeSystemPrompt())
+  agent.ctx = {
+    ...agent.ctx,
+    tools: { restrict: (filter) => { calls.push(filter); return () => undefined } },
+  }
+  await registerAgentTools(agent, {
+    home,
+    workspaceRegistry: { resolveByPath: async () => ({ id: 'w1' }) },
+  })
+  assert.deepEqual(calls, [{ allow: ['grep'] }])
+})
+
+test('a trusted workspace tool allowlist shadows the global one', async () => {
+  const home = tempDir('csmm-tools-')
+  const root = tempDir('csmm-cwd-')
+  const doc = globalStore([], true)
+  doc.groups[0]!.items = [{ kind: 'tool', name: 'grep' }]
+  saveStore(globalPaths(home), doc)
+
+  const ws = emptyStore()
+  ws.groups.push(group('g-ws', { kind: 'workspace', id: 'w1' }, [{ kind: 'tool', name: 'read' }]))
+  ws.activeGroup['workspace:w1'] = 'g-ws'
+  saveStore(workspacePaths(root, 'w1'), ws)
+
+  const calls: Array<{ allow?: string[] }> = []
+  const agent = agentAt(root, new FakeSystemPrompt())
+  agent.ctx = {
+    ...agent.ctx,
+    tools: { restrict: (filter) => { calls.push(filter); return () => undefined } },
+  }
+  await registerAgentTools(agent, {
+    home,
+    workspaceRegistry: { resolveByPath: async () => ({ id: 'w1' }) },
+  })
+  assert.deepEqual(calls, [{ allow: ['read'] }])
+})
+
+test('an untrusted workspace falls back to the global tool allowlist', async () => {
+  const home = tempDir('csmm-tools-')
+  const root = tempDir('csmm-cwd-')
+  const doc = globalStore([], false)
+  doc.groups[0]!.items = [{ kind: 'tool', name: 'grep' }]
+  saveStore(globalPaths(home), doc)
+
+  const ws = emptyStore()
+  ws.groups.push(group('g-ws', { kind: 'workspace', id: 'w1' }, [{ kind: 'tool', name: 'read' }]))
+  ws.activeGroup['workspace:w1'] = 'g-ws'
+  saveStore(workspacePaths(root, 'w1'), ws)
+
+  const calls: Array<{ allow?: string[] }> = []
+  const agent = agentAt(root, new FakeSystemPrompt())
+  agent.ctx = {
+    ...agent.ctx,
+    tools: { restrict: (filter) => { calls.push(filter); return () => undefined } },
+  }
+  await registerAgentTools(agent, {
+    home,
+    workspaceRegistry: { resolveByPath: async () => ({ id: 'w1' }) },
+  })
+  assert.deepEqual(calls, [{ allow: ['grep'] }])
+})
+
+test('prompt, skill and tool materializers work from the same group', async () => {
+  const home = tempDir('csmm-tools-')
+  const sectionDir = path.join(globalPaths(home).root, 'sections')
+  fs.mkdirSync(sectionDir, { recursive: true })
+  fs.writeFileSync(path.join(sectionDir, 'core.md'), 'SECTION-BODY-COMBINED\n')
+  const doc = globalStore([], true)
+  doc.skills.push(skill('alpha', 'global', 'SKILL-BODY-COMBINED'))
+  doc.groups[0]!.items = [
+    { kind: 'section', name: 'core' },
+    { kind: 'skill', name: 'alpha' },
+    { kind: 'tool', name: 'grep' },
+  ]
+  saveStore(globalPaths(home), doc)
+
+  const prompt = new FakeSystemPrompt()
+  const skills = new FakeSkills()
+  const calls: Array<{ allow?: string[] }> = []
+  const agent: AgentLike = {
+    id: 'a-combined',
+    session: { cwd: tempDir('csmm-cwd-') },
+    ctx: {
+      systemPrompt: prompt,
+      skills,
+      tools: { restrict: (filter) => { calls.push(filter); return () => undefined } },
+    },
+  }
+
+  await registerAgentPrompts(agent, { home })
+  const text = textOf(prompt)
+  assert.match(text, /SECTION-BODY-COMBINED/)
+  assert.match(text, /alpha desc/)
+
+  await registerAgentSkills(agent, { home })
+  assert.equal(skills.registered[0]?.content, 'SKILL-BODY-COMBINED')
+
+  await registerAgentTools(agent, { home })
+  assert.deepEqual(calls, [{ allow: ['grep'] }])
+})
+

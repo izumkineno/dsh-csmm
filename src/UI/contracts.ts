@@ -18,12 +18,13 @@ export const SCOPE_LABEL: Record<ScopeKind, string> = {
   workspace: '工作区',
 }
 
-export type PageTab = 'prompt' | 'skill' | 'mcp'
+export type PageTab = 'prompt' | 'skill' | 'mcp' | 'manage'
 
 export const PAGE_TABS: ReadonlyArray<{ id: PageTab; label: string }> = [
   { id: 'prompt', label: '提示词' },
   { id: 'skill', label: '技能' },
   { id: 'mcp', label: 'MCP' },
+  { id: 'manage', label: '配置集与生效' },
 ]
 
 export const KIND_LABEL: Record<GroupItemKind, string> = {
@@ -144,7 +145,6 @@ export interface Group {
   name: string
   scope: Scope
   enabled: boolean
-  toolsMode?: 'allow'
   items: GroupItem[]
 }
 
@@ -164,8 +164,24 @@ export interface Meta {
 
 // ---------- 视图状态 ----------
 export interface Active {
-  kind: 'group' | 'custom'
+  kind: 'group'
   id: string | null
+}
+
+/** 资源页各自保存一份选中项：切 tab 再回来仍停在原处。 */
+export type PromptResourceKind = 'section' | 'context' | 'tool'
+
+export type ResourceRef =
+  | { kind: PromptResourceKind; name: string }
+  | { kind: 'skill' | 'mcp'; name: string }
+  | { kind: 'custom'; id: string }
+
+export type ResourceTab = 'prompt' | 'skill' | 'mcp'
+
+export interface ResourceSelections {
+  prompt: ResourceRef | null
+  skill: ResourceRef | null
+  mcp: ResourceRef | null
 }
 
 export type PromptDetailKind = 'section' | 'context' | 'tool'
@@ -179,14 +195,22 @@ export interface PromptDetailView {
   text: string
 }
 
+export interface PromptCatalogEntry {
+  name: string
+  source: string
+  tokens: number
+}
+
+/** 提示词页的只读目录：段 / 运行上下文 / 工具定义。 */
+export interface PromptCatalog {
+  sections: PromptCatalogEntry[]
+  contexts: PromptCatalogEntry[]
+  tools: PromptCatalogEntry[]
+}
+
 export type Detail =
   | { kind: 'skill' | 'mcp'; name: string }
   | { kind: 'prompt'; name: string; promptKind: PromptDetailKind }
-
-export interface Selection {
-  skill: string | null
-  mcp: string | null
-}
 
 export interface CustomDraft {
   name: string
@@ -239,7 +263,18 @@ export interface WorkspaceTrustModal {
   wsId: string
 }
 
-export type ModalState = SkillAddModal | MigrateModal | ServerFormModal | RawModal | WorkspaceTrustModal
+/** 从编辑器直接设为生效时携带的未保存名称。 */
+export interface GroupActivationInput {
+  name?: string
+}
+
+export interface GroupActivateModal {
+  type: 'groupActivate'
+  groupId: string
+  name?: string
+}
+
+export type ModalState = SkillAddModal | MigrateModal | ServerFormModal | RawModal | WorkspaceTrustModal | GroupActivateModal
 
 export type ModalPatch = Partial<
   Omit<MigrateModal, 'type'> & Omit<ServerFormModal, 'type'> & Omit<RawModal, 'type'>
@@ -267,7 +302,9 @@ export interface AppState {
   active: Active
   detail: Detail | null
   tab: PageTab
-  sel: Selection
+  selected: ResourceSelections
+  /** 从资源页跳转到配置集编辑器后，一次性定位到某个成员。 */
+  groupFocus: { kind: GroupItemKind; name: string; nonce: number } | null
   saved: Record<string, string>
   activeGroup: Record<string, string>
   overrides: Overrides
@@ -390,6 +427,10 @@ export interface Selectors {
   resolvedServer(state: AppState, name: string | null | undefined): McpServer | undefined
   /** 提示词段 / 运行上下文 / 工具定义的只读全文；宿主未返回时 undefined。 */
   resolvePromptDetail(state: AppState, name: string, kind: PromptDetailKind): PromptDetailView | undefined
+  /** 提示词页的只读目录；自有段优先于同名 DSH 注册段。 */
+  promptCatalog(state: AppState): PromptCatalog
+  /** 当前 tab 对应的资源选中项；分组与生效页为 null。 */
+  currentResource(state: AppState): ResourceRef | null
   visibleSkills(state: AppState): Skill[]
   visibleServers(state: AppState): McpServer[]
   isTrustedWorkspace(meta: Meta, wsId: string | null | undefined): boolean
@@ -399,7 +440,7 @@ export interface Selectors {
   effServerEnabled(state: AppState, name: string, skipKey?: string): boolean
   effToolOn(state: AppState, server: string, tool: string, skipKey?: string): boolean
   itemsTokens(items: GroupItem[], state: AppState): number
-  budgetBreakdown(state: AppState): BudgetBreakdown
+  budgetBreakdown(state: AppState, groupOverride?: Group | null): BudgetBreakdown
   mergedTotal(state: AppState): number
 }
 
@@ -407,16 +448,20 @@ export interface Selectors {
 export interface Actions {
   setScope(scope: Scope): void
   setTab(tab: PageTab): void
-  setActive(kind: 'group' | 'custom', id: string | null): void
-  setEffectiveGroup(id: string): void
+  setActive(kind: 'group', id: string | null): void
+  setEffectiveGroup(id: string, input?: GroupActivationInput): void
+  /** 确认空配置集 / 空工具名单的启用。 */
+  confirmActivateGroup(id: string): void
+  /** 从资源页跳到配置集编辑器，定位到某个成员。 */
+  editInGroup(kind: GroupItemKind, name: string): void
+  clearGroupFocus(): void
   /** 删除本层映射，回到「继承上层」。 */
   inheritGroup(): void
   /** 显式声明本层不使用任何分组，阻断继承。 */
   setNone(): void
   openDetail(detail: Detail): void
   closeDetail(): void
-  selectSkill(name: string): void
-  selectMcp(name: string): void
+  selectResource(ref: ResourceRef): void
   newGroup(): void
   newCustom(): void
   setQuery(field: 'skill' | 'mcp', value: string): void
@@ -428,15 +473,12 @@ export interface Actions {
   toggleDraftCheck(group: Group, kind: GroupItemKind, name: string): void
   addDraftItem(group: Group, kind: GroupItemKind, name: string): void
   saveGroup(group: Group, name: string): void
-  setToolsMode(group: Group, mode: 'all' | 'allow'): void
   revertGroup(group: Group): void
   setCustomDraft(id: string, name: string, text: string): void
   saveCustom(custom: CustomPrompt, name: string, text: string): void
   revertCustom(custom: CustomPrompt): void
   toggleCustom(id: string): void
   deleteItem(item: Group | CustomPrompt, kind: 'group' | 'custom'): void
-  setGroupItem(kind: GroupItemKind, name: string): void
-  addSkillsToGroup(names: string[]): void
   toggleSkill(name: string): void
   setSkDelConfirm(name: string | null): void
   deleteSkill(name: string): void

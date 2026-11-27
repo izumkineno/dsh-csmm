@@ -1,9 +1,9 @@
 import { useAppViewModel } from '../../viewmodel/useAppViewModel'
+import GroupStatus from './GroupStatus'
 
 export default function DetailView() {
   const { state, actions, selectors } = useAppViewModel()
   const d = state.detail
-  const group = selectors.currentGroup(state)
   const back = <button className="linkbtn" data-back onClick={() => actions.closeDetail()}>‹ 返回</button>
   if (!d) return null
   if (d.kind === 'prompt') {
@@ -54,7 +54,6 @@ export default function DetailView() {
         </>
       )
     }
-    const inGroup = !!group && selectors.hasItem(group.items, 'mcp', srv.name)
     const inherited = srv.scope === 'global' && state.scope.kind === 'workspace'
     return (
       <>
@@ -71,6 +70,7 @@ export default function DetailView() {
             <dt>工具</dt><dd>{srv.tools.length} 个</dd>
             <dt>配对段</dt><dd>mcp:{srv.name} · {srv.tokens} tok</dd>
             <dt>认证</dt><dd>{srv.auth}</dd>
+            <dt>配置集</dt><dd><GroupStatus kind="mcp" name={srv.name} /></dd>
           </dl>
           <div className="group-label">工具</div>
           <div className="res">
@@ -89,7 +89,7 @@ export default function DetailView() {
           <div className="detail-actions">
             <button className="btn small" data-restart onClick={() => actions.restartConnection()}>重启连接</button>
             <button className="btn small" data-configedit onClick={() => actions.openServerForm(srv, false)}>编辑配置</button>
-            {group && <button className="btn small" data-groupitem onClick={() => actions.setGroupItem('mcp', srv.name)}>{inGroup ? '从分组移除' : '加入分组'}</button>}
+            <button className="btn small" data-editgroup onClick={() => actions.editInGroup('mcp', srv.name)}>在配置集中编辑</button>
           </div>
         </div>
         <div className="editor-foot">{back}</div>
@@ -105,7 +105,6 @@ export default function DetailView() {
       </>
     )
   }
-  const inGroup = !!group && selectors.hasItem(group.items, 'skill', sk.name)
   const inherited = sk.scope === 'global' && state.scope.kind === 'workspace'
   return (
     <>
@@ -121,6 +120,7 @@ export default function DetailView() {
           <dt>作用域</dt><dd>{sk.scope === 'global' ? '全局' : '工作区'}</dd>
           <dt>体积</dt><dd>{sk.bytes} bytes</dd>
           <dt>说明</dt><dd>{sk.desc}</dd>
+          <dt>配置集</dt><dd><GroupStatus kind="skill" name={sk.name} /></dd>
         </dl>
         <div className="group-label">SKILL.md</div>
         <div className="detail-text">{sk.text}</div>
@@ -128,7 +128,7 @@ export default function DetailView() {
           {sk.scope === 'global'
             ? (state.scope.kind !== 'global' && <button className="btn small" data-skillmove="workspace" onClick={() => actions.moveSkill(sk.name, 'workspace')}>复制到当前工作区</button>)
             : <button className="btn small" data-skillmove="global" onClick={() => actions.moveSkill(sk.name, 'global')}>复制到全局</button>}
-          {group && <button className="btn small" data-groupitem onClick={() => actions.setGroupItem('skill', sk.name)}>{inGroup ? '从分组移除' : '加入分组'}</button>}
+          <button className="btn small" data-editgroup onClick={() => actions.editInGroup('skill', sk.name)}>在配置集中编辑</button>
         </div>
       </div>
       <div className="editor-foot">{back}</div>
