@@ -16,7 +16,7 @@ dsh-csmm 是 DSH 插件：在全局 / 工作区两个作用域里管理提示词
 
 ```bash
 npm install
-npm test                 # tsx --test，当前 127 条
+npm test                 # tsx --test，当前 129 条
 npm run build            # 产出 dist/index.js + dist/client.js
 npm run preview:ui       # Vite 预览，经代理访问真实宿主 RPC
 npx tsc -p tsconfig.host.json --noEmit

@@ -131,6 +131,12 @@ test('DshSkillRow 在全局作用域显示默认策略', () => {
   assert.doesNotMatch(html, /data-gdsh-policy-locked/)
 })
 
+test('DshSkillRow 对模型与用户都不可调用的技能显示不可调用', () => {
+  const html = renderDshRow(dshSkill({ model: false, user: false }))
+  assert.match(html, /不可调用/)
+  assert.doesNotMatch(html, /仅用户/)
+})
+
 test('DshSkillRow 对项目技能显示禁用的开关与 Git 管理说明', () => {
   const html = renderDshRow(dshSkill({
     source: 'project-agents',

@@ -79,7 +79,7 @@ export default function SkillPane() {
               </dd>
               {dsh.path && <><dt>位置</dt><dd>{dsh.path}</dd></>}
               <dt>作用域</dt><dd>{dsh.origin === 'workspace' ? '当前工作区可见' : '全局可见'}</dd>
-              <dt>调用策略</dt><dd>{dsh.model ? '模型可调用' : '仅用户可用'} · {dsh.user ? '用户可调用' : '不向用户暴露'}</dd>
+              <dt>调用策略</dt><dd>{dsh.model ? '模型可调用' : dsh.user ? '仅用户可用' : '不可调用'} · {dsh.user ? '用户可调用' : '不向用户暴露'}</dd>
               <dt>说明</dt><dd>{dsh.description || '无描述'}</dd>
               {dsh.whenToUse && <><dt>何时使用</dt><dd>{dsh.whenToUse}</dd></>}
             </dl>
@@ -192,7 +192,7 @@ export default function SkillPane() {
           <dt>体积</dt><dd>{selectors.formatKB(sk.bytes)} KB</dd>
           <dt>状态</dt><dd>{off ? '停用' : '启用'}</dd>
           <dt>配置集</dt><dd><GroupStatus kind="skill" name={sk.name} /></dd>
-          <dt>调用策略</dt><dd>{sk.model ? '模型可调用' : '仅用户可用'} · {sk.user ? '用户可调用' : '不向用户暴露'}</dd>
+          <dt>调用策略</dt><dd>{sk.model ? '模型可调用' : sk.user ? '仅用户可用' : '不可调用'} · {sk.user ? '用户可调用' : '不向用户暴露'}</dd>
         </dl>
         <div className="skilldoc-head">
           <span className="group-label">SKILL.md</span>

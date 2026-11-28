@@ -114,7 +114,7 @@ export function ItemRow(props: {
   if (it.kind === 'skill') {
     const skill = selectors.resolvedSkill(state, it.name)
     const off = !!skill && !selectors.effSkillEnabled(state, skill.name)
-    const meta = !skill ? '缺失' : off ? '已停用 · 不计入预算' : skill.model ? '模型可调用' : '仅用户可用'
+    const meta = !skill ? '缺失' : off ? '已停用 · 不计入预算' : skill.model ? '模型可调用' : skill.user ? '仅用户可用' : '不可调用'
     return previewRow(it.name, skill ? skill.text : '', skill ? selectors.tokenEstimate(skill.text) : 0, meta, expanded, onToggle, off || !skill ? 'off' : 'cat-skill')
   }
   if (it.kind === 'tool') {

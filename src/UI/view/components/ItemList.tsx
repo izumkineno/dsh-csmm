@@ -107,7 +107,9 @@ function SkillList() {
                   <span className="i-tail">
                     {sk.disabled && <span className="tag" title="当前作用域策略已停用">已停用</span>}
                     {sk.origin === 'workspace' && <span className="tag">工作区</span>}
-                    {!sk.model && <span className="tag" title="模型不可调用">仅用户</span>}
+                    {sk.model && !sk.user && <span className="tag" title="不向用户暴露">仅模型</span>}
+                    {!sk.model && sk.user && <span className="tag" title="模型不可调用">仅用户</span>}
+                    {!sk.model && !sk.user && <span className="tag" title="模型与用户均不可调用">不可调用</span>}
                   </span>
                 </ResourceRow>
               )

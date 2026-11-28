@@ -118,7 +118,7 @@ export function DshSkillRow(props: {
       <span className="muted">
         {sk.rootLabel} · {DSH_SOURCE_LABEL[sk.source] ?? sk.source}
         {sk.provider ? ' · ' + sk.provider : ''}
-        {sk.model ? '' : ' · 仅用户'}
+        {sk.model ? (sk.user ? '' : ' · 仅模型') : sk.user ? ' · 仅用户' : ' · 不可调用'}
         {' · '}{policyFrom}
       </span>
       {sk.disabled && <span className="tag off">已停用</span>}
@@ -415,7 +415,7 @@ export default function GroupEditor({ g }: { g: Group }) {
                 checked={check('skill', sk.name)} onChange={() => toggle('skill', sk.name)} aria-label={sk.name} />
               <span className="r-ico">◆</span>
               <span className="c-label">{sk.name}</span>
-              <span className="muted">{selectors.formatKB(sk.bytes)} KB · {sk.model ? '模型可调用' : '仅用户可用'}</span>
+              <span className="muted">{selectors.formatKB(sk.bytes)} KB · {sk.model ? '模型可调用' : sk.user ? '仅用户可用' : '不可调用'}</span>
               <button className="linkbtn" data-manage="skill" data-name={sk.name}
                 onClick={() => { actions.setTab('skill'); actions.selectResource({ kind: 'skill', name: sk.name }) }}>详情</button>
             </div>

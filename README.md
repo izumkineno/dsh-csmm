@@ -87,7 +87,7 @@ src/UI/       面板 MVVM（contracts ｜ model ｜ viewmodel ｜ view）
 ```bash
 npm install
 npm run build        # 宿主 + 客户端打包到 dist/
-npm test             # tsx --test tests/shared + host + client + UI（当前 128 条）
+npm test             # tsx --test tests/shared + host + client + UI（当前 129 条）
 npm run preview:ui   # Vite 预览面板，经代理走真实宿主 RPC
 ```
 
