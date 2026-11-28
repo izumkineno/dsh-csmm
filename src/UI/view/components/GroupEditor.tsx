@@ -2,6 +2,7 @@ import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent, type Rea
 import {
   DSH_SOURCE_LABEL,
   SCOPE_LABEL,
+  type DshSkill,
   type Group,
   type GroupItem,
   type GroupItemKind,
@@ -12,6 +13,24 @@ type Filter = 'all' | 'selected' | 'unselected'
 type Lane = 'all' | 'section' | 'tool' | 'mcp' | 'skill'
 
 const fmt = (n: number) => n.toLocaleString('en-US')
+
+function Toggle(props: {
+  checked: boolean
+  label: string
+  disabled?: boolean
+  title?: string
+  data?: { check?: string; kind?: string; name?: string }
+  onChange: () => void
+}) {
+  return (
+    <label className={'switch' + (props.checked ? ' on' : '')} title={props.title}>
+      <input type='checkbox' role='switch' data-check={props.data?.check} data-kind={props.data?.kind}
+        data-name={props.data?.name} checked={props.checked} disabled={props.disabled}
+        onChange={props.onChange} aria-label={props.label} />
+      <span className='switch-track' aria-hidden='true'></span>
+    </label>
+  )
+}
 
 function SectionSwitch(props: {
   kind?: GroupItemKind
@@ -26,11 +45,9 @@ function SectionSwitch(props: {
   const kind = props.kind ?? 'section'
   return (
     <div className={'check-row switch-row' + (props.focused ? ' focus-flash' : '')}>
-      <label className={'switch' + (props.checked ? ' on' : '')} title={props.checked ? '已注入' : '已拦截'}>
-        <input type='checkbox' role='switch' data-check='1' data-kind={kind} data-name={props.name}
-          checked={props.checked} onChange={props.onChange} aria-label={props.label + (props.checked ? '（注入）' : '（拦截）')} />
-        <span className='switch-track' aria-hidden='true'></span>
-      </label>
+      <Toggle checked={props.checked} data={{ check: '1', kind, name: props.name }}
+        label={props.label + (props.checked ? '（注入）' : '（拦截）')}
+        title={props.checked ? '已注入' : '已拦截'} onChange={props.onChange} />
       <label className='c-label' onClick={props.onChange}>{props.label}</label>
       {props.meta && <span className='muted'>{props.meta}</span>}
       {props.onPreview && <button type='button' className='linkbtn' data-preview={kind} data-name={props.name}
@@ -66,6 +83,49 @@ function SectionGroup(props: {
       </summary>
       {props.children}
     </details>
+  )
+}
+
+
+export function DshSkillRow(props: {
+  skill: DshSkill
+  scopeKind: 'global' | 'workspace'
+  onPolicy: (state: 'on' | 'off') => void
+  onDetails: () => void
+}) {
+  const { skill: sk, scopeKind } = props
+  const policyFrom = scopeKind === 'workspace'
+    ? sk.policyFrom === 'workspace'
+      ? '本层覆盖'
+      : sk.policyFrom === 'global'
+        ? '继承全局'
+        : '默认'
+    : sk.policyFrom === 'global'
+      ? '本层覆盖'
+      : '默认'
+  const locked = sk.source === 'runtime' || sk.source.startsWith('dsh-csmm')
+    ? '插件技能 · 不可停用'
+    : 'Git 管理 · 不可停用'
+  return (
+    <div className="res-row" data-gdshitem data-name={sk.name}
+      data-gdsh-policy-state={sk.policy} data-gdsh-policy-from={sk.policyFrom}>
+      <Toggle checked={!sk.disabled} disabled={!sk.canDisable}
+        label={sk.name + (sk.disabled ? '（已停用）' : '（已启用）')}
+        title={sk.canDisable ? (sk.disabled ? '已停用，点击启用' : '已启用，点击停用') : locked}
+        onChange={() => props.onPolicy(sk.disabled ? 'on' : 'off')} />
+      <span className="r-ico">◆</span>
+      <span className="c-label">{sk.name}</span>
+      <span className="muted">
+        {sk.rootLabel} · {DSH_SOURCE_LABEL[sk.source] ?? sk.source}
+        {sk.provider ? ' · ' + sk.provider : ''}
+        {sk.model ? '' : ' · 仅用户'}
+        {' · '}{policyFrom}
+      </span>
+      {sk.disabled && <span className="tag off">已停用</span>}
+      {!sk.canDisable && <span className="muted" data-gdsh-policy-locked>{locked}</span>}
+      <button type="button" className="linkbtn" data-manage="dsh-skill" data-name={sk.name}
+        onClick={props.onDetails}>详情</button>
+    </div>
   )
 }
 
@@ -361,22 +421,14 @@ export default function GroupEditor({ g }: { g: Group }) {
             </div>
           ))}
           {dshSkillGroups.length > 0 && (
-            <div className="note gdsh-note" data-gdsh-note>以下 DSH 注册表技能由宿主提供，始终可用，不参与本配置集勾选。</div>
+            <div className="note gdsh-note" data-gdsh-note>以下 DSH 注册表技能由宿主提供；作用域策略在当前作用域立即保存，不属于本配置集勾选。</div>
           )}
           {dshSkillGroups.map((group) => (
             <SectionGroup key={'gdsh:' + group.key} title={group.label} selected={0} total={group.skills.length} readonly>
               {group.skills.map((sk) => (
-                <div key={sk.name} className="res-row" data-gdshitem data-name={sk.name}>
-                  <span className="r-ico">◆</span>
-                  <span className="c-label">{sk.name}</span>
-                  <span className="muted">
-                    {DSH_SOURCE_LABEL[sk.source] ?? sk.source}
-                    {sk.provider ? ' · ' + sk.provider : ''}
-                    {sk.model ? '' : ' · 仅用户'}
-                  </span>
-                  <button className="linkbtn" data-manage="dsh-skill" data-name={sk.name}
-                    onClick={() => { actions.setTab('skill'); actions.selectResource({ kind: 'skill', name: sk.name }) }}>详情</button>
-                </div>
+                <DshSkillRow key={sk.name} skill={sk} scopeKind={state.scope.kind}
+                  onPolicy={(next) => { void actions.setDshSkillPolicy(sk.name, sk.source, next) }}
+                  onDetails={() => { actions.setTab('skill'); actions.selectResource({ kind: 'skill', name: sk.name }) }} />
               ))}
             </SectionGroup>
           ))}

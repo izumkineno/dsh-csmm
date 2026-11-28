@@ -334,11 +334,11 @@ export const filteredDshSkills = (state: AppState): DshSkill[] => {
   })
 }
 
-/** DSH 技能的来源标签：具体 source（如 oh-my-dsh）优先，通用 source 回退 provider，最后回退标签。 */
+/** DSH 技能的来源标签：已知 source 用可读标签，未知 source 原样显示，空 source 回退 provider。 */
 export const dshSkillOrigin = (skill: DshSkill): string => {
   const source = skill.source.trim()
   if (source && !(source in DSH_SOURCE_LABEL)) return source
-  return skill.provider.trim() || DSH_SOURCE_LABEL[source] || source || '未知来源'
+  return DSH_SOURCE_LABEL[source] || skill.provider.trim() || source || '未知来源'
 }
 
 /** 按来源把 DSH 技能分组，组名使用可读来源标签。 */

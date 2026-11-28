@@ -17,7 +17,11 @@ const sections: SectionRecord[] = [
 
 function makeService(
   trusted = false,
-  extra: { contextWindow?: () => number | undefined; registry?: SkillRegistryLike } = {},
+  extra: {
+    contextWindow?: () => number | undefined
+    registry?: SkillRegistryLike
+    skillScope?: unknown
+  } = {},
 ) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-csmm-svc-'))
   const global = scopePaths(path.join(root, 'global'))
@@ -350,8 +354,8 @@ const registrySkills: DshSkillSummary[] = [
 ]
 
 function fakeRegistry(
-  calls: Array<{ cwd?: string }>,
-  gets: Array<{ name: string; cwd?: string }> = [],
+  calls: Array<{ cwd?: string; scope?: unknown }>,
+  gets: Array<{ name: string; cwd?: string; scope?: unknown }> = [],
 ): SkillRegistryLike {
   return {
     list: async (options) => {
@@ -421,6 +425,28 @@ test('listDshSkills reads the registry and passes cwd only for a trusted workspa
   const globalOnly = await service.listDshSkills()
   assert.deepEqual(globalOnly.skills.map((s) => s.name), ['global-one'])
   assert.deepEqual(calls[2], {})
+})
+
+test('listDshSkills forwards the preset view scope to the registry', async () => {
+  const calls: Array<{ cwd?: string; scope?: unknown }> = []
+  const gets: Array<{ name: string; cwd?: string; scope?: unknown }> = []
+  const { service, workspaceRoot } = makeService(false, {
+    registry: fakeRegistry(calls, gets),
+    skillScope: 'preset-scope',
+  })
+
+  const global = await service.listDshSkills()
+  assert.deepEqual(global.skills.map((s) => s.name), ['global-one'])
+  assert.deepEqual(calls[0], { scope: 'preset-scope' })
+
+  service.dispatch({ type: 'trust.set', workspaceId: wsId, trusted: true })
+  const workspace = await service.listDshSkills({ kind: 'workspace', id: wsId })
+  assert.deepEqual(workspace.skills.map((s) => s.name), ['global-one', 'ws-one'])
+  assert.deepEqual(calls[1], { cwd: workspaceRoot, scope: 'preset-scope' })
+
+  const detail = await service.getDshSkill('global-one')
+  assert.equal(detail.skill?.name, 'global-one')
+  assert.deepEqual(gets[0], { name: 'global-one', scope: 'preset-scope' })
 })
 
 test('listDshSkills is read-only and reports a missing registry without writing', async () => {

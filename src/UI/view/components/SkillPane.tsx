@@ -75,7 +75,7 @@ export default function SkillPane() {
               <dt>作用域策略</dt><dd data-dsh-policy-state={dsh.policy} data-dsh-policy-from={dsh.policyFrom}>
                 {dsh.policy === 'off' ? '停用' : '启用'}
                 {' · '}
-                {dsh.policyFrom === 'workspace' ? '本层覆盖' : dsh.policyFrom === 'global' ? '继承全局' : '默认'}
+                {dsh.policyFrom === 'default' ? '默认' : state.scope.kind === 'workspace' && dsh.policyFrom === 'global' ? '继承全局' : '本层覆盖'}
               </dd>
               {dsh.path && <><dt>位置</dt><dd>{dsh.path}</dd></>}
               <dt>作用域</dt><dd>{dsh.origin === 'workspace' ? '当前工作区可见' : '全局可见'}</dd>

@@ -70,8 +70,8 @@ export interface DshSkillDefinition extends DshSkillSummary {
 }
 
 export interface SkillRegistryLike {
-  list(options: { cwd?: string }): Promise<DshSkillSummary[]>
-  get(name: string, options: { cwd?: string }): Promise<DshSkillDefinition | undefined>
+  list(options: { cwd?: string; scope?: unknown }): Promise<DshSkillSummary[]>
+  get(name: string, options: { cwd?: string; scope?: unknown }): Promise<DshSkillDefinition | undefined>
 }
 
 /** One read of an editable SKILL.md; buffer/text/sha256 all come from the same bytes. */
@@ -176,8 +176,17 @@ function effectiveOffPolicies(
 interface DshTarget {
   registry?: SkillRegistryLike
   cwd?: string
+  /** Agent-preset scope that carries user/project skill providers. */
+  scope?: unknown
   restricted: boolean
   errors: string[]
+}
+
+function registryOptions(target: DshTarget): { cwd?: string; scope?: unknown } {
+  const options: { cwd?: string; scope?: unknown } = {}
+  if (target.cwd) options.cwd = target.cwd
+  if (target.scope !== undefined) options.scope = target.scope
+  return options
 }
 
 export interface ServiceOptions {
@@ -187,6 +196,8 @@ export interface ServiceOptions {
   sections?: SectionRecord[]
   /** DSH's live skill registry; the catalog reads it instead of walking directories. */
   registry?: SkillRegistryLike
+  /** Viewing scope (the default agent preset); omitted reads the global layer only. */
+  skillScope?: unknown
   /** Current workspace root; used when the requested workspace has no registry path. */
   workspaceRoot?: string
   /** Context window of the model used by the last conversation in this scope. */
@@ -236,7 +247,7 @@ export class CsmmService {
           summary,
           resolveSkillPolicy(records, policyScope, target.cwd, summary.name, summary.source),
         )
-      const summaries = (await target.registry.list(target.cwd ? { cwd: target.cwd } : {}))
+      const summaries = (await target.registry.list(registryOptions(target)))
         .filter((summary) => !(summary.provider === 'dsh-csmm' && summary.source === 'dsh-csmm:off'))
       const skills = summaries.map(decorate)
       const names = new Set(skills.map((skill) => skill.name))
@@ -285,7 +296,7 @@ export class CsmmService {
     try {
       const state = this.loadMerged()
       const policyScope = target.restricted ? { kind: 'global' as const } : this.requestedScope(scope)
-      const found = await target.registry.get(name, target.cwd ? { cwd: target.cwd } : {})
+      const found = await target.registry.get(name, registryOptions(target))
       const shadowed = found?.provider === 'dsh-csmm' && found.source === 'dsh-csmm:off'
       if (!found || shadowed) {
         const off = effectiveOffPolicies(state.doc.skillPolicy, policyScope, target.cwd)
@@ -419,7 +430,7 @@ export class CsmmService {
 
     let found: DshSkillDefinition | undefined
     try {
-      found = await target.registry.get(name, { cwd: target.cwd })
+      found = await target.registry.get(name, registryOptions(target))
     } catch (error) {
       throw new ServiceError('E_NOT_FOUND', '读取技能失败：' + errorMessage(error))
     }
@@ -540,15 +551,16 @@ export class CsmmService {
     if (!registry) {
       return { restricted, errors: ['宿主未提供技能注册表'] }
     }
+    const viewScope = this.options.skillScope
     if (target.kind === 'workspace') {
       const cwd = this.options.workspaces?.find((w) => w.id === target.id)?.path
         ?? this.options.workspaceRoot
       if (!cwd) {
-        return { registry, restricted, errors: ['工作区根路径不可用，未读取项目技能'] }
+        return { registry, scope: viewScope, restricted, errors: ['工作区根路径不可用，未读取项目技能'] }
       }
-      return { registry, cwd, restricted, errors: [] }
+      return { registry, cwd, scope: viewScope, restricted, errors: [] }
     }
-    return { registry, restricted, errors: [] }
+    return { registry, scope: viewScope, restricted, errors: [] }
   }
 
   dispatch(command: Command): Snapshot {

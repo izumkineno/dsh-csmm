@@ -3,7 +3,8 @@ import type { ConnectionOutcome, PromptSectionView, RpcRequest } from '../shared
 import type { CsmmService } from './service'
 
 export interface RpcDeps {
-  service(workspaceRoot?: string): Promise<CsmmService>
+  service(workspaceRoot?: string, skillScope?: unknown): Promise<CsmmService>
+  skillScope?(): Promise<{ key: unknown; dispose?: () => Promise<void> } | undefined>
   probe?(serverName: string): Promise<ConnectionOutcome>
   onChanged?(): void
   promptList?(sessionId?: string, presetId?: string): Promise<PromptSectionView[]>
@@ -37,16 +38,15 @@ export async function handleRpc(
       return { status: 200, body: { ok: true, prompts } }
     }
     if (request.method === 'skillCatalog') {
-      const service = await deps.service(request.workspaceRoot)
-      return { status: 200, body: { ok: true, catalog: await service.listDshSkills(request.scope) } }
+      const catalog = await withSkillService(deps, request.workspaceRoot, (service) =>
+        service.listDshSkills(request.scope))
+      return { status: 200, body: { ok: true, catalog } }
     }
     if (request.method === 'skillDetail') {
       if (!request.skillName) return fail(400, 'E_PAYLOAD', 'skillName is required')
-      const service = await deps.service(request.workspaceRoot)
-      return {
-        status: 200,
-        body: { ok: true, detail: await service.getDshSkill(request.skillName, request.scope) },
-      }
+      const detail = await withSkillService(deps, request.workspaceRoot, (service) =>
+        service.getDshSkill(request.skillName as string, request.scope))
+      return { status: 200, body: { ok: true, detail } }
     }
     if (request.method === 'skillSourceSave') {
       if (
@@ -59,19 +59,14 @@ export async function handleRpc(
       ) {
         return fail(400, 'E_PAYLOAD', 'skillName, workspace scope, text and expectedSha256 are required')
       }
-      const service = await deps.service(request.workspaceRoot)
-      return {
-        status: 200,
-        body: {
-          ok: true,
-          saved: await service.saveDshSkillSource(
-            request.skillName,
-            request.scope,
-            request.text,
-            request.expectedSha256,
-          ),
-        },
-      }
+      const saved = await withSkillService(deps, request.workspaceRoot, (service) =>
+        service.saveDshSkillSource(
+          request.skillName as string,
+          request.scope as { kind: 'workspace'; id: string },
+          request.text as string,
+          request.expectedSha256 as string,
+        ))
+      return { status: 200, body: { ok: true, saved } }
     }
     if (request.method === 'testConnection') {
       if (!request.server) return fail(400, 'E_PAYLOAD', 'server is required')
@@ -94,6 +89,23 @@ export async function handleRpc(
     return fail(400, 'E_KIND', `unknown method: ${String(request.method)}`)
   } catch (error) {
     return mapServiceError(error)
+  }
+}
+
+async function withSkillService<T>(
+  deps: RpcDeps,
+  workspaceRoot: string | undefined,
+  run: (service: CsmmService) => Promise<T>,
+): Promise<T> {
+  const view = await deps.skillScope?.()
+  try {
+    return await run(await deps.service(workspaceRoot, view?.key))
+  } finally {
+    try {
+      await view?.dispose?.()
+    } catch {
+      // releasing a read-only preset scope must not fail the request
+    }
   }
 }
 

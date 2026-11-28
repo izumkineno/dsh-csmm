@@ -93,7 +93,8 @@ export function apply(ctx: HostContext): void {
   }
 
   const handler = createRpcHandler({
-    service: (workspaceRoot) => openService(ctx, workspaceRoot),
+    service: (workspaceRoot, skillScope) => openService(ctx, workspaceRoot, skillScope),
+    skillScope: () => acquireSkillScope(ctx),
     promptList: async (sessionId, presetId) => {
       const systemPrompt = lookup<SystemPromptAssembler>(ctx, 'systemPrompt')
       if (!systemPrompt) return []
@@ -160,7 +161,11 @@ export function apply(ctx: HostContext): void {
   }
 }
 
-async function openService(ctx: HostContext, workspaceRoot?: string): Promise<CsmmService> {
+async function openService(
+  ctx: HostContext,
+  workspaceRoot?: string,
+  skillScope?: unknown,
+): Promise<CsmmService> {
   const home = process.env.DSH_HOME ?? path.join(os.homedir(), '.dsh')
   const global: ScopePaths = globalPaths(home)
   let workspace: WorkspaceBinding | undefined
@@ -221,10 +226,37 @@ async function openService(ctx: HostContext, workspaceRoot?: string): Promise<Cs
     workspace,
     workspaces,
     registry: lookup<SkillRegistryLike>(ctx, 'skills'),
+    ...(skillScope === undefined ? {} : { skillScope }),
     ...(workspaceRoot ? { workspaceRoot } : {}),
     sections: loadSections(home),
     contextWindow: () => lastContextWindow(ctx, workspaceRoot),
   })
+}
+
+async function acquireSkillScope(
+  ctx: HostContext,
+): Promise<{ key: unknown; dispose: () => Promise<void> } | undefined> {
+  const presets = lookup<AgentPresetsApi>(ctx, 'agentPresets')
+  let scope: { key: unknown; [Symbol.asyncDispose]?: () => Promise<void> } | undefined
+  try {
+    const listed = await presets?.remoteExportList?.()
+    const id = listed?.presets.find((row) => row.isDefault)?.id ?? listed?.presets[0]?.id
+    if (!id) return undefined
+    scope = await presets?.acquireScope?.(id)
+  } catch {
+    return undefined
+  }
+  if (!scope) return undefined
+  return {
+    key: scope.key,
+    dispose: async () => {
+      try {
+        await scope?.[Symbol.asyncDispose]?.()
+      } catch {
+        // releasing a read-only preset scope must not fail the read
+      }
+    },
+  }
 }
 
 function lastContextWindow(ctx: HostContext, workspaceRoot?: string): number | undefined {

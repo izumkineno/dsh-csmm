@@ -2,9 +2,10 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import type { DshSkillDetail, SkillDraft, SkillSourceState } from '../../../src/UI/contracts'
+import type { DshSkill, DshSkillDetail, SkillDraft, SkillSourceState } from '../../../src/UI/contracts'
 import SkillEditor from '../../../src/UI/view/components/SkillEditor'
 import SkillSourceEditor from '../../../src/UI/view/components/SkillSourceEditor'
+import { DshSkillRow } from '../../../src/UI/view/components/GroupEditor'
 
 const draft: SkillDraft = {
   label: '演示技能',
@@ -77,6 +78,73 @@ test('SkillSourceEditor 渲染源工具栏、状态、文本与固定说明', ()
   assert.match(html, /data-dshsource-save[^>]*disabled/)
   assert.doesNotMatch(html, /data-dshsource-conflict/)
 })
+const dshSkill = (patch: Partial<DshSkill> = {}): DshSkill => ({
+  name: 'demo',
+  description: '演示技能',
+  source: 'user-dsh',
+  provider: 'test',
+  model: true,
+  user: true,
+  origin: 'global',
+  rootPriority: 4,
+  rootLabel: '用户 .dsh',
+  canDisable: true,
+  policy: 'on',
+  policyFrom: 'default',
+  disabled: false,
+  ...patch,
+})
+
+const renderDshRow = (skill: DshSkill, scopeKind: 'global' | 'workspace' = 'workspace'): string =>
+  renderToStaticMarkup(createElement(DshSkillRow, {
+    skill,
+    scopeKind,
+    onPolicy: () => {},
+    onDetails: () => {},
+  }))
+
+test('DshSkillRow 使用资源行与开关展示继承来的停用策略', () => {
+  const html = renderDshRow(dshSkill({ policy: 'off', policyFrom: 'global', disabled: true }))
+  assert.match(html, /class="res-row"/)
+  assert.doesNotMatch(html, /class="[^"]*gdsh-/)
+  assert.match(html, /data-gdshitem/)
+  assert.match(html, /data-gdsh-policy-state="off"/)
+  assert.match(html, /data-gdsh-policy-from="global"/)
+  assert.match(html, /class="tag off">已停用/)
+  assert.match(html, /继承全局/)
+  assert.match(html, /role="switch"/)
+  assert.doesNotMatch(html, /role="switch"[^>]*checked/)
+  assert.match(html, /data-manage="dsh-skill"/)
+})
+
+test('DshSkillRow 对本层启用使用已打开的开关', () => {
+  const html = renderDshRow(dshSkill({ policyFrom: 'workspace' }))
+  assert.match(html, /本层覆盖/)
+  assert.match(html, /role="switch"[^>]*checked/)
+  assert.doesNotMatch(html, /role="switch"[^>]*disabled/)
+})
+
+test('DshSkillRow 在全局作用域显示默认策略', () => {
+  const html = renderDshRow(dshSkill(), 'global')
+  assert.match(html, /默认/)
+  assert.match(html, /role="switch"[^>]*checked/)
+  assert.doesNotMatch(html, /data-gdsh-policy-locked/)
+})
+
+test('DshSkillRow 对项目技能显示禁用的开关与 Git 管理说明', () => {
+  const html = renderDshRow(dshSkill({
+    source: 'project-agents',
+    origin: 'workspace',
+    rootPriority: 2,
+    rootLabel: '项目 .agents',
+    canDisable: false,
+  }))
+  assert.match(html, /data-gdsh-policy-locked/)
+  assert.match(html, /Git 管理 · 不可停用/)
+  assert.match(html, /role="switch"[^>]*disabled/)
+  assert.match(html, /data-manage="dsh-skill"/)
+})
+
 
 test('SkillSourceEditor 在文本变化时允许保存', () => {
   const state: SkillSourceState = { status: 'ready', name: 'demo', raw: detail.raw + '\n修改', sha256: detail.sha256 }

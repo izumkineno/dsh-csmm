@@ -6,7 +6,7 @@ dsh-csmm 是 DSH 插件：在全局 / 工作区两个作用域里管理提示词
 
 ## 当前状态
 
-- 已有实现：侧边栏面板、双作用域 store、RPC 后端、按 agent 注入提示词与技能、按组过滤提示词段、DSH 技能注册表自动加载/按来源分组/按需正文、插件技能编辑与 Markdown/目录导入、DSH 全局/用户技能复制到工作区、DSH 工作区源技能 `SKILL.md` 编辑（SHA 校验/备份/原子写）、DSH 技能的作用域策略与根优先级（`skillPolicy`，工作区覆盖全局、缺失继承；停用注册运行时遮蔽）、配置集页的只读同步展示，以及三张资源页共用的可折叠列表壳。
+- 已有实现：侧边栏面板、双作用域 store、RPC 后端、按 agent 注入提示词与技能、按组过滤提示词段、DSH 技能注册表自动加载/按来源分组/按需正文、插件技能编辑与 Markdown/目录导入、DSH 全局/用户技能复制到工作区、DSH 工作区源技能 `SKILL.md` 编辑（SHA 校验/备份/原子写）、DSH 技能的作用域策略与根优先级（`skillPolicy`，工作区覆盖全局、缺失继承；停用注册运行时遮蔽）、配置集页的 DSH 技能来源分组、行内启停开关与详情策略操作，以及三张资源页共用的可折叠列表壳。
 - [README.md](README.md) 是当前实现的权威说明（安装、存储、RPC、开发、限制）。
 - [SPEC.md](SPEC.md) 是早期规范草案，仅作设计参考，不再是实现契约。
 - [VSCODE-MAPPING.md](VSCODE-MAPPING.md) 只是概念类比，非规范。
@@ -16,7 +16,7 @@ dsh-csmm 是 DSH 插件：在全局 / 工作区两个作用域里管理提示词
 
 ```bash
 npm install
-npm test                 # tsx --test，当前 123 条
+npm test                 # tsx --test，当前 127 条
 npm run build            # 产出 dist/index.js + dist/client.js
 npm run preview:ui       # Vite 预览，经代理访问真实宿主 RPC
 npx tsc -p tsconfig.host.json --noEmit
@@ -76,6 +76,7 @@ refactor(host): 拆分提示词注入模块
 | 需要什么                  | 去哪里                                                                                                                                                          |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 安装、存储布局、RPC、限制 | [README.md](README.md)                                                                                                                                           |
+| 技能与提示词语义          | [docs/SKILL-PROMPT-SEMANTICS.md](docs/SKILL-PROMPT-SEMANTICS.md)                                                                                                  |
 | 早期设计草案（参考）      | [SPEC.md](SPEC.md)                                                                                                                                               |
 | VS Code 配置类比          | [VSCODE-MAPPING.md](VSCODE-MAPPING.md)                                                                                                                           |
 | 浏览器回归测试            | [docs/BROWSER-TEST-MATRIX.md](docs/BROWSER-TEST-MATRIX.md)、[docs/TEST-CHECKLIST.md](docs/TEST-CHECKLIST.md)、[docs/BROWSER-TEST-SOP.md](docs/BROWSER-TEST-SOP.md) |
