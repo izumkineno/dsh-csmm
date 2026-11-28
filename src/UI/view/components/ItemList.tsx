@@ -23,6 +23,10 @@ function SkillList() {
         <button className="btn small" data-sktool="add" onClick={() => actions.openSkillAdd()}>+ 添加</button>
         <button className="btn small" data-sktool="migrate" onClick={() => actions.openMigrate(state.skillSel)}>复制到…</button>
         <button className="btn small" data-sktool="folder" onClick={() => actions.openSkillDir()}>目录</button>
+        <button className="btn small" data-sktool="scan" disabled={state.scan.status === 'loading'}
+          title="只读扫描 DSH 用户级与当前工作区的技能目录" onClick={() => actions.scanSkills()}>
+          {state.scan.status === 'loading' ? '扫描中…' : '扫描 DSH'}
+        </button>
       </div>
       <div className="scroll">
         {list.length === 0 && <div className="sub-empty">没有匹配的技能</div>}

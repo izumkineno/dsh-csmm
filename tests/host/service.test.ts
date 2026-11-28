@@ -17,11 +17,15 @@ const sections: SectionRecord[] = [
 function makeService(trusted = false, extra: { contextWindow?: () => number | undefined } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-csmm-svc-'))
   const global = scopePaths(path.join(root, 'global'))
+  const home = path.join(root, 'home')
+  const workspaceRoot = path.join(root, 'repo')
   const workspace = { id: wsId, paths: scopePaths(path.join(root, 'ws', wsId)) }
   const service = new CsmmService({
     global,
+    home,
     workspace,
-    workspaces: [{ id: wsId, title: 'repo', path: path.join(root, 'repo'), trusted }],
+    workspaces: [{ id: wsId, title: 'repo', path: workspaceRoot, trusted }],
+    workspaceRoot,
     sections,
     ...extra,
   })
@@ -29,7 +33,7 @@ function makeService(trusted = false, extra: { contextWindow?: () => number | un
     // seed trust through the public command path
     fs.mkdirSync(global.root, { recursive: true })
   }
-  return { service, global, workspace, root }
+  return { service, global, workspace, root, home, workspaceRoot }
 }
 
 const group = {
@@ -322,4 +326,44 @@ test('prompt.toggle persists disabled sections per scope', () => {
 test('snapshot exposes the context window from the host provider', () => {
   const { service } = makeService(false, { contextWindow: () => 1_000_000 })
   assert.equal(service.snapshot({ kind: 'global' }).bootstrap.contextWindow, 1_000_000)
+})
+
+function writeSkill(root: string, name: string, file: string, text: string): void {
+  const dir = path.join(root, name)
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, file), text)
+}
+
+test('scanSkills scans global skills and only adds project skills when trusted', () => {
+  const { service, home, workspaceRoot } = makeService()
+  writeSkill(path.join(home, 'skills'), 'global-one', 'SKILL.md',
+    '---\nname: global-one\ndescription: 全局技能\n---\nbody')
+  writeSkill(path.join(workspaceRoot, '.dsh', 'skills'), 'ws-one', 'SKILL.md',
+    '---\nname: ws-one\ndescription: 项目技能\n---\nbody')
+
+  const untrusted = service.scanSkills({ kind: 'workspace', id: wsId })
+  assert.deepEqual(untrusted.skills.map((s) => s.name), ['global-one'])
+  assert.equal(untrusted.roots.length, 1)
+  assert.equal(untrusted.restricted, true)
+
+  service.dispatch({ type: 'trust.set', workspaceId: wsId, trusted: true })
+  const trusted = service.scanSkills({ kind: 'workspace', id: wsId })
+  assert.deepEqual(trusted.skills.map((s) => s.name), ['global-one', 'ws-one'])
+  assert.deepEqual(trusted.roots.map((r) => r.scope), ['global', 'workspace'])
+  assert.equal(trusted.restricted, undefined)
+
+  const globalOnly = service.scanSkills()
+  assert.deepEqual(globalOnly.skills.map((s) => s.name), ['global-one'])
+})
+
+test('scanSkills is read-only and tolerates missing roots', () => {
+  const { service, global, home } = makeService()
+  const before = fs.existsSync(global.store)
+  const scan = service.scanSkills()
+  assert.equal(before, fs.existsSync(global.store))
+  assert.equal(scan.roots.length, 1)
+  assert.equal(scan.roots[0].exists, false)
+  assert.deepEqual(scan.skills, [])
+  assert.deepEqual(scan.errors, [])
+  assert.equal(fs.existsSync(path.join(home, 'skills')), false)
 })

@@ -207,6 +207,7 @@ EVDIR/<用例编号>/
 | SUM-06 | 缺引用诊断 | 选 `缺引用组` → `设为生效` | 点 `诊断` | 3 条 error：分组引用了不存在的提示词段/技能/MCP 服务器；预览该项显示 `缺失`；预算 5 tok（仅自定义） | 截图 | `selectors.ts`（diagnostics） |
 | DAT-06 | 重启后持久化 | 已做若干保存 | 按 SOP §6 停实例 → 重启 → 重开面板 | 数据、生效组、信任状态与重启前一致；`[RPC] revision` 保持；`[DISK]` 无临时文件残留 | 重启前后 store 拷贝 + snapshot | `store.ts` |
 | UX-04 | 弹窗焦点陷阱 | 打开任意弹窗 | 连续 Tab/Shift+Tab；按 Escape | 焦点在弹窗首尾循环；Escape 关闭并返回焦点；背景 `aria-modal=true` | a11y 输出 | `Modals.tsx` |
+| SKL-23 | 只读扫描 DSH 技能目录 | 临时 `DSH_HOME/skills` 放 `scan-one/SKILL.md` 与 `scan-off/SKILL.md.disabled`；工作区 `.dsh/skills/ws-one/SKILL.md`；工作区已信任 | 全局技能页点 `[data-sktool=scan]`，关闭；切到已信任工作区技能页再点 `[data-sktool=scan]`；看弹窗；点 `[data-skscan=rescan]` | `[DOM]` 标题 `扫描 DSH 技能`；全局作用域仅 global root；工作区作用域 global/workspace 两 root 路径正确；`scan-one`/`ws-one` 行存在；`scan-off` 行 `.disabled` 且标 `已禁用`；重扫后仍列出；`[REV]`/`[DISK]` 不变 | 截图 + store | `ItemList.tsx`、`Modals.tsx`、`src/host/skillScan.ts` |
 
 ## 5. P2 用例（抽查）
 

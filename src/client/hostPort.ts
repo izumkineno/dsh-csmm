@@ -6,6 +6,7 @@ import type {
   PromptSectionView,
   RpcRequest,
   Scope,
+  SkillScanResult,
   Snapshot,
 } from '../shared/types'
 
@@ -16,11 +17,17 @@ export interface RemoteHost extends HostPort {
   dispatch(command: Command): Promise<Snapshot>
   revision(): number
   listPrompts(sessionId?: string): Promise<PromptSectionView[]>
+  scanSkills(scope?: Scope): Promise<SkillScanResult>
 }
 
 export async function requestRpc(
   body: RpcRequest & { workspaceRoot?: string },
-): Promise<{ snapshot?: Snapshot; outcome?: ConnectionOutcome; prompts?: PromptSectionView[] }> {
+): Promise<{
+  snapshot?: Snapshot
+  outcome?: ConnectionOutcome
+  prompts?: PromptSectionView[]
+  scan?: SkillScanResult
+}> {
   const response = await fetch(ROUTE, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -31,6 +38,7 @@ export async function requestRpc(
     snapshot?: Snapshot
     outcome?: ConnectionOutcome
     prompts?: PromptSectionView[]
+    scan?: SkillScanResult
     error?: { code?: string; message?: string }
   }
   if (!response.ok || payload.ok === false) {
@@ -100,6 +108,11 @@ export function createRemoteHost(snapshot: Snapshot, workspaceRoot?: string): Re
     async listPrompts(sessionId?: string, presetId?: string) {
       const result = await requestRpc({ method: 'promptList', sessionId, presetId, workspaceRoot: root })
       return result.prompts ?? []
+    },
+    async scanSkills(scope?: Scope) {
+      const result = await requestRpc({ method: 'skillScan', scope, workspaceRoot: root })
+      if (!result.scan) throw new Error('scan missing from response')
+      return result.scan
     },
   }
 }

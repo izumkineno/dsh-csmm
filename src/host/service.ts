@@ -1,3 +1,4 @@
+import path from 'node:path'
 import type {
   Bootstrap,
   Command,
@@ -6,10 +7,13 @@ import type {
   GroupRecord,
   McpServerRecord,
   Scope,
+  ScannedSkill,
   SectionRecord,
   SecretsDocument,
   ServerSecretsPatch,
   SkillRecord,
+  SkillScanResult,
+  SkillScanRoot,
   Snapshot,
   StoreDocument,
   WorkspaceRecord,
@@ -26,6 +30,7 @@ import {
   visibleSkills,
 } from '../shared/resolve'
 import type { ScopePaths } from './paths'
+import { scanSkillRoot } from './skillScan'
 import { loadSecrets, loadStore, saveSecrets, saveStore, withLock } from './store'
 
 export class ServiceError extends Error {
@@ -48,6 +53,10 @@ export interface ServiceOptions {
   workspace?: WorkspaceBinding
   workspaces?: WorkspaceRecord[]
   sections?: SectionRecord[]
+  /** DSH home; scanSkills reads `<home>/skills` when no explicit home is given. */
+  home?: string
+  /** Current workspace root; scanSkills reads `<root>/.dsh/skills` when trusted. */
+  workspaceRoot?: string
   /** Context window of the model used by the last conversation in this scope. */
   contextWindow?: () => number | undefined
 }
@@ -67,6 +76,51 @@ export class CsmmService {
     const contextWindow = this.options.contextWindow?.()
     if (contextWindow) bootstrap.contextWindow = contextWindow
     return { revision: state.doc.revision, bootstrap, diagnostics: this.diagnostics(state.doc, requested) }
+  }
+
+  /**
+   * Read-only scan of the DSH skill roots. The requested workspace is only
+   * scanned when it is trusted; otherwise the result is restricted to global.
+   */
+  scanSkills(scope: Scope = { kind: 'global' }): SkillScanResult {
+    const state = this.loadMerged()
+    const requested = this.requestedScope(scope)
+    const target = this.resolveScope(requested, state)
+    const roots: SkillScanRoot[] = []
+    const skills: ScannedSkill[] = []
+    const errors: string[] = []
+
+    const home = this.options.home ?? path.dirname(this.options.global.root)
+    const globalScan = scanSkillRoot({ root: path.join(home, 'skills'), scope: 'global' })
+    roots.push(globalScan.root)
+    skills.push(...globalScan.skills)
+    errors.push(...globalScan.errors)
+
+    if (target.kind === 'workspace') {
+      const workspaceRoot = this.options.workspaces?.find((w) => w.id === target.id)?.path
+        ?? this.options.workspaceRoot
+      if (workspaceRoot) {
+        const workspaceScan = scanSkillRoot({
+          root: path.join(workspaceRoot, '.dsh', 'skills'),
+          scope: 'workspace',
+          ...(target.id ? { wsId: target.id } : {}),
+        })
+        roots.push(workspaceScan.root)
+        skills.push(...workspaceScan.skills)
+        errors.push(...workspaceScan.errors)
+      } else {
+        errors.push('工作区根路径不可用，未扫描项目技能')
+      }
+    }
+
+    const restricted = requested.kind === 'workspace' && target.kind === 'global'
+    return {
+      scannedAt: new Date().toISOString(),
+      roots,
+      skills,
+      errors,
+      ...(restricted ? { restricted: true } : {}),
+    }
   }
 
   dispatch(command: Command): Snapshot {

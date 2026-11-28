@@ -1,9 +1,9 @@
 // 唯一的跨层耦合面：模型 / 视图模型 / 视图之间共享的全部类型与接口。
 // 任何一层新增对外能力，先在这里定义契约，再到各自实现里落地。
 
-import type { PromptSectionView } from '../shared/types'
+import type { PromptSectionView, ScannedSkill, SkillScanResult, SkillScanRoot } from '../shared/types'
 
-export type { PromptSectionView }
+export type { PromptSectionView, ScannedSkill, SkillScanResult, SkillScanRoot }
 
 // ---------- 作用域与标签 ----------
 export type ScopeKind = 'global' | 'workspace'
@@ -274,7 +274,18 @@ export interface GroupActivateModal {
   name?: string
 }
 
-export type ModalState = SkillAddModal | MigrateModal | ServerFormModal | RawModal | WorkspaceTrustModal | GroupActivateModal
+export interface SkillScanModal {
+  type: 'skillScan'
+}
+
+export type ModalState = SkillAddModal | MigrateModal | ServerFormModal | RawModal | WorkspaceTrustModal | GroupActivateModal | SkillScanModal
+
+/** 只读扫描 DSH 用户级 / 项目级技能目录的结果。 */
+export interface SkillScanState {
+  status: 'idle' | 'loading' | 'done' | 'error'
+  result?: SkillScanResult
+  error?: string | null
+}
 
 export type ModalPatch = Partial<
   Omit<MigrateModal, 'type'> & Omit<ServerFormModal, 'type'> & Omit<RawModal, 'type'>
@@ -312,6 +323,7 @@ export interface AppState {
   customs: CustomPrompt[]
   skills: Skill[]
   servers: McpServer[]
+  scan: SkillScanState
   skillSel: string[]
   q: { skill?: string; mcp?: string }
   showPlugin: boolean
@@ -364,6 +376,8 @@ export interface HostPort {
   send?(command: Record<string, unknown>, workspaceRoot?: string): Promise<void>
   /** 读取宿主当前注册并组装出的提示词段/运行上下文（只读）。 */
   listPrompts?(sessionId?: string, presetId?: string): Promise<PromptSectionView[]>
+  /** 只读扫描 DSH 已有技能目录；不导入、不写文件。 */
+  scanSkills?(scope?: Scope): Promise<SkillScanResult>
 }
 
 // ---------- 派生数据 ----------
@@ -485,6 +499,8 @@ export interface Actions {
   moveSkill(name: string, target: 'global' | 'workspace'): void
   openSkillDir(): void
   addSkillsFromFiles(files: FileList | File[] | null, fromFolder: boolean): void
+  /** 打开只读扫描弹窗并扫描 DSH 用户级 / 项目级技能目录。 */
+  scanSkills(): void
   refreshServers(): void
   toggleTool(serverName: string, toolName: string, on: boolean): void
   setAllTools(serverName: string, on: boolean, names: string[]): void

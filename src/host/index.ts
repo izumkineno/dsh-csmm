@@ -218,8 +218,10 @@ async function openService(ctx: HostContext, workspaceRoot?: string): Promise<Cs
 
   return new CsmmService({
     global,
+    home,
     workspace,
     workspaces,
+    ...(workspaceRoot ? { workspaceRoot } : {}),
     sections: loadSections(home),
     contextWindow: () => lastContextWindow(ctx, workspaceRoot),
   })

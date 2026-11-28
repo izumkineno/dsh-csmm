@@ -5,7 +5,7 @@ import { copyGroups, copyServer, currentDef, ensureServer, ensureSkill, removeGr
 
 export function createResourceActions(
   ctx: ActionContext,
-): Pick<Actions, 'toggleSkill' | 'setSkDelConfirm' | 'deleteSkill' | 'moveSkill' | 'openSkillDir' | 'addSkillsFromFiles' | 'refreshServers' | 'toggleTool' | 'setAllTools' | 'saveToolList' | 'testConnection' | 'toggleMcp' | 'oauthToggle' | 'deleteMcp' | 'setMcpDelConfirm' | 'restartConnection'> {
+): Pick<Actions, 'toggleSkill' | 'setSkDelConfirm' | 'deleteSkill' | 'moveSkill' | 'openSkillDir' | 'addSkillsFromFiles' | 'scanSkills' | 'refreshServers' | 'toggleTool' | 'setAllTools' | 'saveToolList' | 'testConnection' | 'toggleMcp' | 'oauthToggle' | 'deleteMcp' | 'setMcpDelConfirm' | 'restartConnection'> {
   const { mutate, getState, sync, pushToast, host } = ctx
   return {
     // ---- 技能管理 ----
@@ -160,6 +160,30 @@ export function createResourceActions(
         } else {
           pushToast(s, skipped ? '没有可添加的技能（当前作用域已有同名定义）' : '没有选中文件')
         }
+      })
+    },
+    scanSkills() {
+      if (getState().scan.status === 'loading') return
+      const scan = host.scanSkills
+      mutate((s) => {
+        s.modal = { type: 'skillScan' }
+        s.scan = scan
+          ? { status: 'loading', error: null }
+          : { status: 'error', error: '宿主未提供技能扫描接口' }
+      })
+      if (!scan) return
+      const scope = { ...getState().scope }
+      void scan(scope).then((result) => {
+        mutate((s) => {
+          s.scan = { status: 'done', result, error: null }
+          pushToast(s, '扫描到 ' + result.skills.length + ' 个 DSH 技能')
+        })
+      }).catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error)
+        mutate((s) => {
+          s.scan = { status: 'error', error: message }
+          pushToast(s, '扫描失败：' + message)
+        })
       })
     },
     refreshServers() { mutate((s) => { pushToast(s, s.copy.refreshServers) }) },

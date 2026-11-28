@@ -45,6 +45,48 @@ export interface SkillRecord {
   bundled?: boolean
 }
 
+/** One skill discovered on disk during a read-only DSH scan. */
+export interface ScannedSkill {
+  /** Directory name; this is what DSH uses as the skill id. */
+  name: string
+  /** Frontmatter name when present, otherwise the directory name. */
+  label: string
+  scope: 'global' | 'workspace'
+  wsId?: string
+  bytes: number
+  /** disable-model-invocation is inverted into this flag. */
+  model: boolean
+  /** user-invocable, defaulting to true when absent. */
+  user: boolean
+  desc: string
+  whenToUse: string
+  /** Absolute skill directory. */
+  dir: string
+  /** Path relative to the scan root, using forward slashes. */
+  rel: string
+  /** File that was read: SKILL.md or SKILL.md.disabled. */
+  file: string
+  enabled: boolean
+  notes: string[]
+}
+
+export interface SkillScanRoot {
+  scope: 'global' | 'workspace'
+  wsId?: string
+  path: string
+  exists: boolean
+  count: number
+}
+
+export interface SkillScanResult {
+  scannedAt: string
+  roots: SkillScanRoot[]
+  skills: ScannedSkill[]
+  errors: string[]
+  /** The requested workspace was untrusted, so only the global root was scanned. */
+  restricted?: boolean
+}
+
 export interface ConnectionOutcome {
   status: ServerStatus
   tools: ToolRecord[]
@@ -238,7 +280,7 @@ export interface PromptSectionView {
 }
 
 export interface RpcRequest {
-  method: 'snapshot' | 'dispatch' | 'testConnection' | 'promptList'
+  method: 'snapshot' | 'dispatch' | 'testConnection' | 'promptList' | 'skillScan'
   scope?: Scope
   command?: Command
   server?: McpServerRecord

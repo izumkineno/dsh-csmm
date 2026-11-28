@@ -120,6 +120,70 @@ function ActivateGroup({ m }: { m: GroupActivateModal }) {
   )
 }
 
+function SkillScan() {
+  const { state, actions, selectors } = useAppViewModel()
+  const scan = state.scan
+  const result = scan.result
+  return (
+    <>
+      <div className="hint">只读扫描 DSH 的用户级与当前工作区技能目录；不会导入、修改或删除任何文件。</div>
+      {scan.status === 'loading' && <div className="note" data-skscan="loading">正在读取技能目录…</div>}
+      {scan.status === 'error' && <div className="note" data-skscan="error">扫描失败：{scan.error || '未知错误'}</div>}
+      {result && (
+        <>
+          <dl className="meta-grid">
+            <dt>扫描时间</dt><dd>{new Date(result.scannedAt).toLocaleString()}</dd>
+            <dt>技能</dt><dd>{result.skills.length} 个</dd>
+            {result.restricted && <><dt>范围</dt><dd>当前工作区未受信任，只扫描了全局技能。</dd></>}
+          </dl>
+          <div className="scan-roots">
+            {result.roots.map((r) => (
+              <div key={r.scope + (r.wsId || '')} className="scan-root" data-skscan-root={r.scope}>
+                <span className={'tag' + (r.exists ? '' : ' off')}>{r.exists ? '存在' : '不存在'}</span>
+                <span className="scan-root-scope">{r.scope === 'global' ? '用户级' : '项目级'}</span>
+                <code className="scan-path">{r.path}</code>
+                <span className="muted">{r.count} 个</span>
+              </div>
+            ))}
+          </div>
+          <div className="scan-list">
+            {result.skills.length === 0 && <div className="sub-empty">没有扫描到技能</div>}
+            {result.skills.map((sk) => (
+              <div key={sk.dir} className={'scan-row' + (sk.enabled ? '' : ' disabled')} data-skscan-item data-name={sk.name}>
+                <div className="scan-main">
+                  <div className="scan-title">
+                    <strong>{sk.label}</strong>
+                    <span className="muted">/ {sk.name}</span>
+                    <span className="tag">{sk.scope === 'global' ? '全局' : '工作区'}</span>
+                    {!sk.enabled && <span className="tag off">已禁用</span>}
+                    {sk.model === false && <span className="tag off">模型不可调用</span>}
+                    {sk.user === false && <span className="tag off">用户不可调用</span>}
+                  </div>
+                  <div className="scan-desc">{sk.desc || '（没有 description）'}</div>
+                  {sk.whenToUse && <div className="scan-when">何时使用：{sk.whenToUse}</div>}
+                  <div className="scan-path">{sk.rel} · {selectors.formatKB(sk.bytes)} KB</div>
+                  {sk.notes.length > 0 && <ul className="scan-notes">{sk.notes.map((n) => <li key={n}>{n}</li>)}</ul>}
+                </div>
+              </div>
+            ))}
+          </div>
+          {result.errors.length > 0 && (
+            <details className="scan-errors" open>
+              <summary>扫描时遇到 {result.errors.length} 个问题</summary>
+              <ul>{result.errors.map((e) => <li key={e}>{e}</li>)}</ul>
+            </details>
+          )}
+        </>
+      )}
+      <div className="modal-foot">
+        <button className="btn" onClick={() => actions.closeModal()}>关闭</button>
+        <button className="btn primary" data-skscan="rescan" disabled={scan.status === 'loading'}
+          onClick={() => actions.scanSkills()}>重新扫描</button>
+      </div>
+    </>
+  )
+}
+
 function Raw({ m }: { m: RawModal }) {
   const { actions } = useAppViewModel()
   return (
@@ -174,6 +238,7 @@ export default function Modals() {
     migrate: '复制技能到工作区',
     serverForm: m.type === 'serverForm' && m.editing ? '编辑 MCP 服务器' : '添加 MCP 服务器',
     raw: '原始配置',
+    skillScan: '扫描 DSH 技能',
     groupActivate: '设为生效？',
     workspaceTrust: '信任此工作区？',
   }
@@ -187,6 +252,7 @@ export default function Modals() {
           {m.type === 'migrate' && <Migrate m={m} />}
           {m.type === 'serverForm' && <ServerForm m={m} />}
           {m.type === 'raw' && <Raw m={m} />}
+          {m.type === 'skillScan' && <SkillScan />}
           {m.type === 'groupActivate' && <ActivateGroup m={m} />}
           {m.type === 'workspaceTrust' && <TrustPrompt m={m} />}
         </div>

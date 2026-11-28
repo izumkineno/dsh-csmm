@@ -88,6 +88,32 @@ test('promptList returns the host assembly and degrades to empty', async () => {
   assert.deepEqual((empty.body as { prompts: unknown[] }).prompts, [])
 })
 
+test('skillScan returns the scanned DSH roots and skills', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-csmm-http-scan-'))
+  const home = path.join(root, 'home')
+  const global = scopePaths(path.join(root, 'global'))
+  const dir = path.join(home, 'skills', 'http-one')
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, 'SKILL.md'), '---\nname: http-one\ndescription: HTTP 技能\n---\nbody')
+  const service = new CsmmService({ global, home })
+
+  const result = await handleRpc(deps(service), {
+    method: 'skillScan',
+    scope: { kind: 'global' },
+  })
+  assert.equal(result.status, 200)
+  const body = result.body as {
+    ok: boolean
+    scan: { roots: Array<{ path: string; exists: boolean; count: number }>; skills: Array<{ name: string; desc: string }> }
+  }
+  assert.equal(body.ok, true)
+  assert.equal(body.scan.roots.length, 1)
+  assert.equal(body.scan.roots[0].exists, true)
+  assert.equal(body.scan.roots[0].count, 1)
+  assert.deepEqual(body.scan.skills.map((s) => s.name), ['http-one'])
+  assert.equal(body.scan.skills[0].desc, 'HTTP 技能')
+})
+
 test('unknown methods and missing commands are rejected', async () => {
   const service = makeService()
   const unknown = await handleRpc(deps(service), { method: 'nope' } as unknown as RpcRequest)
