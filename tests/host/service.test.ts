@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -442,4 +443,274 @@ test('listDshSkills is read-only and reports a missing registry without writing'
   assert.deepEqual(failed.errors, ['读取 DSH 技能失败：registry down'])
   const failedDetail = await failing.getDshSkill('global-one')
   assert.deepEqual(failedDetail.errors, ['读取 DSH 技能失败：registry down'])
+})
+
+function sha(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex')
+}
+
+function oneSkillRegistry(name: string, source: string, path?: string): SkillRegistryLike {
+  const summary: DshSkillSummary = {
+    name,
+    description: name + ' desc',
+    source,
+    provider: 'test',
+    path,
+    invocation: { modelInvocable: true, userInvocable: true },
+  }
+  return {
+    list: async () => [summary],
+    get: async () => ({ ...summary, content: '# ' + name }),
+  }
+}
+
+test('getDshSkill reads a trusted workspace source and hashes the file', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-csmm-src-'))
+  fs.mkdirSync(root, { recursive: true })
+  const file = path.join(root, 'SKILL.md')
+  const raw = '---\nname: ws-file\n---\n\n# 正文\n'
+  fs.writeFileSync(file, raw, 'utf8')
+  const { service, workspaceRoot } = makeService(false, { registry: oneSkillRegistry('ws-file', 'project-dsh', file) })
+  fs.mkdirSync(workspaceRoot, { recursive: true })
+  service.dispatch({ type: 'trust.set', workspaceId: wsId, trusted: true })
+  const trusted = await service.getDshSkill('ws-file', { kind: 'workspace', id: wsId })
+  assert.equal(trusted.errors.length, 0)
+  assert.equal(trusted.skill?.content, '# ws-file')
+  assert.equal(trusted.skill?.raw, raw)
+  assert.equal(trusted.skill?.sha256, sha(raw))
+  assert.equal(trusted.skill?.origin, 'workspace')
+})
+
+test('getDshSkill does not read a source outside a trusted workspace', async () => {
+  const { service } = makeService(false, { registry: oneSkillRegistry('global-one', 'user-dsh', '/skills/global-one/SKILL.md') })
+  const view = service as unknown as { readSkillFile: (file: string) => Promise<unknown> }
+  let reads = 0
+  view.readSkillFile = async () => {
+    reads++
+    throw new Error('must not read')
+  }
+
+  const detail = await service.getDshSkill('global-one', { kind: 'workspace', id: wsId })
+  assert.equal(reads, 0)
+  assert.equal(detail.restricted, true)
+  assert.equal(detail.skill?.raw, undefined)
+  assert.equal(detail.skill?.sha256, sha('# global-one'))
+  assert.deepEqual(detail.errors, [])
+})
+
+test('getDshSkill falls back to the content hash when a source is unreadable', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-csmm-bad-'))
+  const big = path.join(root, 'big.md')
+  fs.writeFileSync(big, 'x'.repeat(800001), 'utf8')
+  const raw = path.join(root, 'raw.md')
+  fs.writeFileSync(raw, Buffer.from([0xff]))
+  const registry: SkillRegistryLike = {
+    list: async () => [],
+    get: async (name) => ({
+      name,
+      description: name,
+      source: 'user-dsh',
+      provider: 'test',
+      path: name === 'big' ? big : raw,
+      invocation: { modelInvocable: true, userInvocable: true },
+      content: '#' + name,
+    }),
+  }
+  const { service } = makeService(false, { registry })
+
+  const oversized = await service.getDshSkill('big')
+  assert.equal(oversized.skill?.raw, undefined)
+  assert.match(oversized.errors.join('\n'), /超过 800000 字节/)
+
+  const invalid = await service.getDshSkill('invalid')
+  assert.equal(invalid.skill?.raw, undefined)
+  assert.match(invalid.errors.join('\n'), /UTF-8/)
+})
+
+test('normalizeSkill recalculates bytes and keeps a trimmed whenToUse', () => {
+  const { service } = makeService()
+  const rev = service.dispatch(saveGroup(0)).revision
+  const saved = service.dispatch({
+    type: 'skill.save',
+    scope: { kind: 'global' },
+    skill: {
+      name: 'A B',
+      label: 'ab',
+      scope: 'global',
+      bytes: 1,
+      model: false,
+      user: false,
+      desc: '',
+      text: '技能',
+      whenToUse: '  when needed  ',
+    },
+    expectedRevision: rev,
+  })
+  const skill = saved.bootstrap.skills.find((s) => s.name === 'a-b')
+  assert.equal(skill?.bytes, 6)
+  assert.equal(skill?.whenToUse, 'when needed')
+  assert.equal(skill?.model, false)
+})
+
+test('resolveEditableSource rejects read-only, escaping and non-SKILL paths', async () => {
+  const { global, workspace, workspaceRoot } = makeService()
+  fs.mkdirSync(workspaceRoot, { recursive: true })
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-csmm-out-'))
+  const outsideFile = path.join(outside, 'SKILL.md')
+  fs.writeFileSync(outsideFile, 'outside', 'utf8')
+  const notes = path.join(workspaceRoot, 'notes.md')
+  fs.writeFileSync(notes, 'notes', 'utf8')
+  const good = path.join(workspaceRoot, 'skills', 'good', 'SKILL.md')
+  fs.mkdirSync(path.dirname(good), { recursive: true })
+  fs.writeFileSync(good, '---\nname: good\n---\n\nBODY', 'utf8')
+  const paths: Record<string, string> = { global: good, outside: outsideFile, notes, good }
+  const registry: SkillRegistryLike = {
+    list: async () => [],
+    get: async (name) => ({
+      name,
+      description: name,
+      source: name === 'global' ? 'user-dsh' : 'project-dsh',
+      provider: 'test',
+      path: paths[name],
+      invocation: { modelInvocable: true, userInvocable: true },
+      content: '#' + name,
+    }),
+  }
+  const scoped = new CsmmService({
+    global,
+    workspace,
+    workspaces: [{ id: wsId, title: 'repo', path: workspaceRoot, trusted: true }],
+    workspaceRoot,
+    registry,
+  })
+  const api = scoped as unknown as {
+    resolveEditableSource(name: string, scope: { kind: 'workspace'; id: string }): Promise<{
+      path: string
+      raw: string
+      buffer: Buffer
+      sha256: string
+      mode: number
+      bytes: number
+    }>
+  }
+  scoped.dispatch({ type: 'trust.set', workspaceId: wsId, trusted: true })
+  const scope = { kind: 'workspace' as const, id: wsId }
+  await assert.rejects(() => api.resolveEditableSource('global', scope), (e: unknown) => e instanceof ServiceError && e.code === 'E_SOURCE_READONLY')
+  await assert.rejects(() => api.resolveEditableSource('outside', scope), (e: unknown) => e instanceof ServiceError && e.code === 'E_PATH_ESCAPE')
+  await assert.rejects(() => api.resolveEditableSource('notes', scope), (e: unknown) => e instanceof ServiceError && e.code === 'E_SOURCE_MISSING')
+  const target = await api.resolveEditableSource('good', scope)
+  assert.equal(target.path, good)
+  assert.equal(target.raw, '---\nname: good\n---\n\nBODY')
+  assert.equal(target.buffer.toString('utf8'), target.raw)
+  assert.equal(target.sha256, sha(target.raw))
+  assert.equal(target.bytes, Buffer.byteLength(target.raw, 'utf8'))
+
+  const untrusted = makeService(false, { registry })
+  const untrustedApi = untrusted.service as unknown as {
+    resolveEditableSource(name: string, scope: { kind: 'workspace'; id: string }): Promise<unknown>
+  }
+  await assert.rejects(
+    () => untrustedApi.resolveEditableSource('good', scope),
+    (e: unknown) => e instanceof ServiceError && e.code === 'E_WORKSPACE_UNTRUSTED',
+  )
+})
+
+function saveFixture(initial = '---\nname: edit\n---\n\nOLD') {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-csmm-save-'))
+  const file = path.join(root, 'skills', 'edit', 'SKILL.md')
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, initial, 'utf8')
+  const registry: SkillRegistryLike = {
+    list: async () => [],
+    get: async (name) => name === 'edit'
+      ? {
+          name: 'edit',
+          description: 'edit',
+          source: 'project-dsh',
+          provider: 'test',
+          path: file,
+          invocation: { modelInvocable: true, userInvocable: true },
+          content: 'OLD',
+        }
+      : undefined,
+  }
+  const workspace = { id: wsId, paths: scopePaths(path.join(root, '.dsh', wsId)) }
+  const service = new CsmmService({
+    global: scopePaths(path.join(root, 'global')),
+    workspace,
+    workspaces: [{ id: wsId, title: 'repo', path: root, trusted: true }],
+    workspaceRoot: root,
+    registry,
+  })
+  service.dispatch({ type: 'trust.set', workspaceId: wsId, trusted: true })
+  return { root, file, workspace, service, initial }
+}
+
+test('saveDshSkillSource writes atomically, backs up old bytes and prunes to 20', async () => {
+  const fixture = saveFixture()
+  const backupDir = path.join(fixture.workspace.paths.root, 'skill-backups')
+  fs.mkdirSync(backupDir, { recursive: true })
+  for (let i = 0; i < 25; i += 1) fs.writeFileSync(path.join(backupDir, `edit-${i}.md`), 'old-' + i)
+  const next = '---\nname: edit\n---\n\nNEW'
+  const saved = await fixture.service.saveDshSkillSource(
+    'edit',
+    { kind: 'workspace', id: wsId },
+    next,
+    sha(fixture.initial),
+  )
+  assert.equal(saved.path, fixture.file)
+  assert.equal(saved.sha256, sha(next))
+  assert.equal(fs.readFileSync(fixture.file, 'utf8'), next)
+  const backups = fs.readdirSync(backupDir)
+  assert.equal(backups.length, 20)
+  assert.ok(backups.some((name) => fs.readFileSync(path.join(backupDir, name), 'utf8') === fixture.initial))
+})
+
+test('saveDshSkillSource rejects a stale expectedSha256 without writing', async () => {
+  const fixture = saveFixture()
+  await assert.rejects(
+    () => fixture.service.saveDshSkillSource(
+      'edit',
+      { kind: 'workspace', id: wsId },
+      'REPLACED',
+      '0'.repeat(64),
+    ),
+    (e: unknown) => e instanceof ServiceError && e.code === 'E_SKILL_CONFLICT',
+  )
+  assert.equal(fs.readFileSync(fixture.file, 'utf8'), fixture.initial)
+  assert.equal(fs.existsSync(path.join(fixture.workspace.paths.root, 'skill-backups')), false)
+})
+
+test('saveDshSkillSource is idempotent and validates payloads', async () => {
+  const fixture = saveFixture()
+  const expected = sha(fixture.initial)
+  const same = await fixture.service.saveDshSkillSource('edit', { kind: 'workspace', id: wsId }, fixture.initial, expected)
+  assert.equal(same.sha256, expected)
+  assert.equal(fs.existsSync(path.join(fixture.workspace.paths.root, 'skill-backups')), false)
+
+  await assert.rejects(
+    () => fixture.service.saveDshSkillSource('edit', { kind: 'workspace', id: wsId }, fixture.initial, 'nope'),
+    (e: unknown) => e instanceof ServiceError && e.code === 'E_PAYLOAD',
+  )
+  await assert.rejects(
+    () => fixture.service.saveDshSkillSource('edit', { kind: 'workspace', id: wsId }, '   ', expected),
+    (e: unknown) => e instanceof ServiceError && e.code === 'E_PAYLOAD',
+  )
+  await assert.rejects(
+    () => fixture.service.saveDshSkillSource('edit', { kind: 'workspace', id: wsId }, 'x'.repeat(800001), expected),
+    (e: unknown) => e instanceof ServiceError && e.code === 'E_SKILL_TOO_LARGE',
+  )
+  assert.equal(fs.readFileSync(fixture.file, 'utf8'), fixture.initial)
+})
+
+test('saveDshSkillSource holds the workspace file lock', async () => {
+  const fixture = saveFixture()
+  fs.mkdirSync(fixture.workspace.paths.root, { recursive: true })
+  const lock = path.join(fixture.workspace.paths.root, 'skill-source.lock')
+  fs.writeFileSync(lock, 'held')
+  await assert.rejects(
+    () => fixture.service.saveDshSkillSource('edit', { kind: 'workspace', id: wsId }, 'BLOCKED', sha(fixture.initial)),
+    (e: unknown) => e instanceof ServiceError && e.code === 'E_LOCKED',
+  )
+  assert.equal(fs.readFileSync(fixture.file, 'utf8'), fixture.initial)
 })

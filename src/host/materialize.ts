@@ -42,6 +42,7 @@ export interface AgentLike {
 export interface SkillRegistrationLike {
   name: string
   description: string
+  whenToUse?: string
   content: string
   invocation?: { modelInvocable: boolean; userInvocable: boolean }
   source?: string
@@ -111,6 +112,7 @@ export async function registerAgentSkills(
     .map((item) => skills.register({
       name: item.name,
       description: item.desc.trim() || item.label || item.name,
+      ...(item.whenToUse ? { whenToUse: item.whenToUse } : {}),
       content: item.text.trim() || item.desc.trim() || item.label || item.name,
       invocation: { modelInvocable: item.model, userInvocable: item.user },
       source: 'dsh-csmm',

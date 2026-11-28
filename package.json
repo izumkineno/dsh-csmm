@@ -18,7 +18,7 @@
   "scripts": {
     "dev": "vite",
     "build": "node scripts/build.mjs",
-    "test": "tsx --test tests/shared/*.test.ts tests/host/*.test.ts",
+    "test": "tsx --test tests/shared/*.test.ts tests/host/*.test.ts tests/client/*.test.ts tests/UI/viewmodel/*.test.ts tests/UI/view/*.test.ts",
     "preview": "vite preview",
     "preview:ui": "vite"
   },

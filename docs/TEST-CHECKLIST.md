@@ -210,6 +210,8 @@ EVDIR/<用例编号>/
 | UX-04 | 弹窗焦点陷阱 | 打开任意弹窗 | 连续 Tab/Shift+Tab；按 Escape | 焦点在弹窗首尾循环；Escape 关闭并返回焦点；背景 `aria-modal=true` | a11y 输出 | `Modals.tsx` |
 | SKL-23 | DSH 技能注册表自动加载、来源分组与按需正文（只读） | DSH 全局与受信任工作区各有已注册技能；另有未信任工作区 | 不点技能 tab 先看顶部技能计数；再打开技能页（自动加载）；看 `[data-dshgroup]` 与 `[data-dshitem]`；点 `[data-sktool=refresh]`；点 DSH 行；等 `[data-dshpreview]`；点 `[data-dshview=raw]`；切未信任工作区 | 顶部技能计数在未进入技能页时已更新；「DSH 技能」段按来源分多个组并带数量（具体 source 优先，通用 source 回退 provider）；行显示描述（来源由组标题承担）；刷新可用；`[data-dsh-pane]` 只读详情含来源、调用策略、说明、路径；正文按需加载并能在预览/原文间切换，原文含 `---`、`name:` 与正文；未信任工作区只显示全局项 + `[data-dsh-restricted]`；`[REV]`/`[DISK]` 不变 | 截图 + store | `ItemList.tsx`、`SkillPane.tsx`、`selectors.ts`、`service.ts`、`hostPort.ts` |
 | SKL-24 | 配置集页 DSH 技能只读同步 | SKL-23 数据；选中任一配置集 | 打开技能区；展开一个 DSH 来源组；点一行「详情」 | 出现 `[data-gdshcount]`；来源组只读（`[data-readonly]`），行 `[data-gdshitem]` 无 checkbox/全选/清空；`[data-gdsh-note]` 说明不参与勾选；详情跳到技能页并选中同名 DSH 技能；`[REV]`/`[DISK]` 不变 | 截图 + store | `GroupEditor.tsx`、`selectors.ts` |
+| SKL-25 | 插件技能编辑与导入 | 受信任工作区；选中插件技能；准备 .md 与目录 | 切 `[data-skill-edit]` → 改 label/desc/正文/调用策略 → 保存；刷新后重选；添加 .md、同名 .md、目录 | 字段锚点齐全、name 只读、dirty 后保存可用；toast `已保存技能 <name>`；`skill.save`、revision +1、刷新仍在；导入真实正文与 UTF-8 bytes、同名跳过、zip 被拒；不自动加组 | 截图 + store + snapshot | `SkillPane.tsx`、`SkillEditor.tsx`、`resources.ts`、`skillMarkdown.ts` |
+| SKL-26 | DSH 复制与工作区源编辑 | 全局 DSH 技能；工作区 project 技能；本层配置集 | 点 `[data-dsh-copy]`；切 `[data-dshsource-edit]` 改正文保存；外部改源文件后再保存；重载 | 复制生成同名工作区插件技能且全局不变；本层组追加、继承组只提示；源保存发 `skillSourceSave`、更新字节、备份旧字节、提示重开会话；冲突显示 SHA 且保留文本、禁用保存；DSH 分支无启停/删除 | 截图 + 两个 store + 备份目录 | `SkillPane.tsx`、`SkillSourceEditor.tsx`、`resources.ts`、`service.ts`（saveDshSkillSource） |
 
 ## 5. P2 用例（抽查）
 

@@ -40,6 +40,8 @@ export interface SkillRecord {
   model: boolean
   user: boolean
   desc: string
+  /** 何时使用该技能的提示；供 materialize 透传给 DSH 注册表。 */
+  whenToUse?: string
   text: string
   enabled?: boolean
   bundled?: boolean
@@ -65,6 +67,25 @@ export interface DshSkill {
 export interface DshSkillDetail extends DshSkill {
   /** Markdown body after frontmatter removal, as supplied by the registry. */
   content: string
+  /** 文件原文；散装注册或不可读文件时为 undefined。 */
+  raw?: string
+  /** 源文件字节的 SHA-256 十六进制；没有 raw 时为 undefined。 */
+  sha256?: string
+}
+
+/** 工作区源技能的原文件保存请求。 */
+export interface SkillSourceSaveInput {
+  skillName: string
+  scope: Scope
+  /** 用户编辑后的完整 SKILL.md 原文（含 frontmatter）。 */
+  text: string
+  /** 读取时拿到的源文件 SHA-256；用于检测并发修改。 */
+  expectedSha256: string
+}
+
+export interface SkillSourceSaveResult {
+  path: string
+  sha256: string
 }
 
 export interface DshSkillDetailResult {
@@ -276,12 +297,25 @@ export interface PromptSectionView {
 }
 
 export interface RpcRequest {
-  method: 'snapshot' | 'dispatch' | 'testConnection' | 'promptList' | 'skillCatalog' | 'skillDetail'
+  method:
+    | 'snapshot'
+    | 'dispatch'
+    | 'testConnection'
+    | 'promptList'
+    | 'skillCatalog'
+    | 'skillDetail'
+    | 'skillSourceSave'
   scope?: Scope
   command?: Command
   server?: McpServerRecord
-  /** Skill name for skillDetail. */
+  /** Skill name for skillDetail / skillSourceSave. */
   skillName?: string
+  /** Full SKILL.md text for skillSourceSave. */
+  text?: string
+  /** Source file SHA-256 observed before editing. */
+  expectedSha256?: string
+  /** Known absolute source path for skillSourceSave. */
+  path?: string
   sessionId?: string
   presetId?: string
 }

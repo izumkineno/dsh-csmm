@@ -179,7 +179,7 @@ test('enabled prompt-section items render their body', async () => {
 test('effective skills are registered with their content and invocation flags', async () => {
   const home = tempDir('dsh-csmm-mat-')
   const doc = globalStore([])
-  doc.skills.push(skill('alpha', 'global', 'SKILL-BODY-ALPHA', { model: true, user: false }))
+  doc.skills.push(skill('alpha', 'global', 'SKILL-BODY-ALPHA', { model: true, user: false, whenToUse: '需要 ALPHA 时' }))
   doc.groups[0]!.items.push({ kind: 'skill', name: 'alpha' })
   saveStore(globalPaths(home), doc)
 
@@ -192,6 +192,7 @@ test('effective skills are registered with their content and invocation flags', 
   const registered = skills.registered[0]!
   assert.equal(registered.name, 'alpha')
   assert.equal(registered.content, 'SKILL-BODY-ALPHA')
+  assert.equal(registered.whenToUse, '需要 ALPHA 时')
   assert.deepEqual(registered.invocation, { modelInvocable: true, userInvocable: false })
   dispose?.()
   assert.equal(skills.registered.length, 0)

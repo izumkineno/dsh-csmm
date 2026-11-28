@@ -7,6 +7,7 @@ import type {
   DshSkillDetailResult,
   PromptSectionView,
   SkillCatalogResult,
+  SkillSourceSaveResult,
 } from '../shared/types'
 
 export type { DshSkill, DshSkillDetail, DshSkillDetailResult, PromptSectionView, SkillCatalogResult }
@@ -233,6 +234,25 @@ export interface CustomDraft {
   text: string
 }
 
+/** 插件技能的编辑草稿；name 只读，不在草稿里。 */
+export interface SkillDraft {
+  label: string
+  desc: string
+  text: string
+  model: boolean
+  user: boolean
+}
+
+/** DSH 工作区源文件的编辑状态；raw 是源编辑器的唯一文本来源。 */
+export interface SkillSourceState {
+  status: 'idle' | 'loading' | 'ready' | 'saving' | 'saved' | 'error' | 'conflict'
+  name?: string
+  raw?: string
+  sha256?: string
+  error?: string | null
+  conflictSha?: string
+}
+
 export interface ToolOverride {
   [tool: string]: boolean
 }
@@ -358,6 +378,10 @@ export interface AppState {
   skDelConfirm: string | null
   mcpDelConfirm: string | null
   drafts: Record<string, GroupItem[] | CustomDraft>
+  /** 插件技能编辑草稿，按技能名索引；与组/自定义提示词草稿分开。 */
+  skillDrafts: Record<string, SkillDraft>
+  /** 当前 DSH 源文件编辑状态。 */
+  sourceState: SkillSourceState
   /** 用户选择「暂不信任」的工作区；本次会话不再重复弹窗。 */
   trustDeclined: string[]
   modal: ModalState | null
@@ -408,6 +432,8 @@ export interface HostPort {
   listDshSkills?(scope?: Scope): Promise<SkillCatalogResult>
   /** 按需读取一个 DSH 技能的正文；只读。 */
   getDshSkill?(name: string, scope?: Scope): Promise<DshSkillDetailResult>
+  /** 保存工作区源技能；scope 必须是带 id 的 workspace。 */
+  saveDshSkillSource?(name: string, text: string, expectedSha256: string, scope: Scope): Promise<SkillSourceSaveResult>
 }
 
 // ---------- 派生数据 ----------
@@ -489,6 +515,10 @@ export interface Selectors {
   isTrustedWorkspace(meta: Meta, wsId: string | null | undefined): boolean
   groupSources(meta: Meta): string[]
   currentGroup(state: AppState): Group | null
+  /** 只返回当前作用域本层的生效组；继承自全局时返回 null。 */
+  localCurrentGroup(state: AppState): Group | null
+  skillDraft(state: AppState, name: string): SkillDraft | null
+  skillDirty(state: AppState, name: string): boolean
   effSkillEnabled(state: AppState, name: string, skipKey?: string): boolean
   effServerEnabled(state: AppState, name: string, skipKey?: string): boolean
   effToolOn(state: AppState, server: string, tool: string, skipKey?: string): boolean
@@ -530,6 +560,14 @@ export interface Actions {
   setCustomDraft(id: string, name: string, text: string): void
   saveCustom(custom: CustomPrompt, name: string, text: string): void
   revertCustom(custom: CustomPrompt): void
+  setSkillDraft(name: string, patch: Partial<SkillDraft>): void
+  setDshSourceText(text: string): void
+  revertSkill(name: string): void
+  saveSkill(name: string): Promise<void>
+  copyDshSkillToWorkspace(name: string): Promise<void>
+  saveDshSkillSource(name: string, text: string): Promise<void>
+  reloadDshSkillSource(name: string): Promise<void>
+  retryGroupAppend(name: string): Promise<void>
   toggleCustom(id: string): void
   deleteItem(item: Group | CustomPrompt, kind: 'group' | 'custom'): void
   toggleSkill(name: string): void
@@ -537,11 +575,11 @@ export interface Actions {
   deleteSkill(name: string): void
   moveSkill(name: string, target: 'global' | 'workspace'): void
   openSkillDir(): void
-  addSkillsFromFiles(files: FileList | File[] | null, fromFolder: boolean): void
+  addSkillsFromFiles(files: FileList | File[] | null, fromFolder: boolean): Promise<void>
   /** 读取 DSH 技能注册表；扫描结果在技能页内联显示。 */
   loadDshSkills(): void
   /** 按需读取一个 DSH 技能的正文。 */
-  loadDshSkill(name: string): void
+  loadDshSkill(name: string, force?: boolean): void
   refreshServers(): void
   toggleTool(serverName: string, toolName: string, on: boolean): void
   setAllTools(serverName: string, on: boolean, names: string[]): void

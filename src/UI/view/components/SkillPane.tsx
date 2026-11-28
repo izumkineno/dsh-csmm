@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
-import { DSH_SOURCE_LABEL, type DshSkillDetail, type Skill } from '../../contracts'
+import { DSH_SOURCE_LABEL, type DshSkillDetail, type Skill, type SkillDraft } from '../../contracts'
 import { useAppViewModel } from '../../viewmodel/useAppViewModel'
 import Markdown from './Markdown'
 import GroupStatus from './GroupStatus'
+import SkillEditor from './SkillEditor'
+import SkillSourceEditor from './SkillSourceEditor'
 
 function skillFile(sk: Skill): string {
   const lines = ['---', `name: ${sk.name}`, `description: ${sk.desc}`]
@@ -20,21 +22,42 @@ function dshSkillFile(sk: DshSkillDetail): string {
   return lines.join('\n')
 }
 
+const draftOf = (sk: Skill): SkillDraft => ({
+  label: sk.label,
+  desc: sk.desc,
+  text: sk.text,
+  model: sk.model,
+  user: sk.user,
+})
+
 export default function SkillPane() {
   const { state, actions, selectors } = useAppViewModel()
-  const [view, setView] = useState<'preview' | 'raw'>('preview')
+  const [view, setView] = useState<'preview' | 'edit'>('preview')
+  const [dshView, setDshView] = useState<'preview' | 'source'>('preview')
+  const [copying, setCopying] = useState(false)
   const skName = state.selected.skill?.kind === 'skill' ? state.selected.skill.name : null
   const sk = selectors.resolvedSkill(state, skName)
   const dsh = skName ? selectors.dshSkill(state, skName) : undefined
   const dshName = dsh?.name
   const dshDoc = dshName && state.dshDoc.name === dshName ? state.dshDoc : undefined
+
+  useEffect(() => {
+    setView('preview')
+    setDshView('preview')
+    setCopying(false)
+  }, [skName])
+
   useEffect(() => {
     if (!dshName) return
     if (state.dshDoc.name === dshName && state.dshDoc.status !== 'idle') return
     actions.loadDshSkill(dshName)
   }, [dshName, state.dshDoc.name, state.dshDoc.status, actions])
+
   if (!sk) {
     if (dsh) {
+      const ready = dshDoc?.status === 'ready' && dshDoc.detail ? dshDoc.detail : undefined
+      const editableSource = dsh.origin === 'workspace' && ready?.raw !== undefined
+      const sourceState = dshDoc?.name === dsh.name ? state.sourceState : { status: 'idle' as const, name: dsh.name }
       return (
         <>
           <div className="editor-head">
@@ -56,12 +79,14 @@ export default function SkillPane() {
             </dl>
             <div className="skilldoc-head">
               <span className="group-label">SKILL.md</span>
-              {dshDoc?.status === 'ready' && (
+              {ready && (
                 <div className="seg" role="tablist" aria-label="SKILL.md 显示方式">
-                  <button role="tab" aria-selected={view === 'preview'} data-dshview="preview"
-                    className={'btn small' + (view === 'preview' ? ' active' : '')} onClick={() => setView('preview')}>预览</button>
-                  <button role="tab" aria-selected={view === 'raw'} data-dshview="raw"
-                    className={'btn small' + (view === 'raw' ? ' active' : '')} onClick={() => setView('raw')}>原文</button>
+                  <button role="tab" aria-selected={dshView === 'preview'} data-dshview="preview"
+                    className={'btn small' + (dshView === 'preview' ? ' active' : '')} onClick={() => setDshView('preview')}>预览</button>
+                  {editableSource && (
+                    <button role="tab" aria-selected={dshView === 'source'} data-dshsource-edit data-dshview="source"
+                      className={'btn small' + (dshView === 'source' ? ' active' : '')} onClick={() => setDshView('source')}>编辑源文件</button>
+                  )}
                 </div>
               )}
             </div>
@@ -73,11 +98,30 @@ export default function SkillPane() {
                 </div>
               )
               : dshDoc?.status === 'ready' && dshDoc.detail
-                ? (view === 'preview'
-                    ? <div className="skilldoc" data-dshpreview><Markdown source={dshSkillFile(dshDoc.detail)} /></div>
-                    : <pre className="md-raw" data-dshraw>{dshSkillFile(dshDoc.detail)}</pre>)
+                ? (dshView === 'source' && editableSource
+                    ? <SkillSourceEditor
+                        detail={dshDoc.detail}
+                        state={sourceState}
+                        onChange={(text) => actions.setDshSourceText(text)}
+                        onSave={() => { void actions.saveDshSkillSource(dsh.name, state.sourceState.raw ?? '') }}
+                        onReload={() => { void actions.reloadDshSkillSource(dsh.name) }}
+                      />
+                    : <div className="skilldoc" data-dshpreview><Markdown source={dshSkillFile(dshDoc.detail)} /></div>)
                 : <div className="note" data-dsh-doc-loading>正在读取技能正文…</div>}
-            <div className="note" data-dsh-note>由 DSH 技能注册表提供，这里只读；正文按需加载，frontmatter 按注册字段重建。停用或修改请在 DSH 侧进行。</div>
+            {dsh.origin === 'global' && (
+              <div className="detail-actions">
+                <button className="btn" data-dsh-copy disabled={copying}
+                  onClick={() => {
+                    setCopying(true)
+                    void actions.copyDshSkillToWorkspace(dsh.name).finally(() => setCopying(false))
+                  }}>{copying ? '复制中…' : '复制到工作区并编辑'}</button>
+              </div>
+            )}
+            <div className="note" data-dsh-note>
+              {dsh.origin === 'workspace'
+                ? '这是当前工作区的项目技能源文件，可在“编辑源文件”中修改；保存后重开会话生效。'
+                : '由 DSH 技能注册表提供，全局/用户级技能只读；可复制到工作区后编辑。停用或修改请在 DSH 侧进行。'}
+            </div>
           </div>
           <div className="editor-foot"><span className="hint">DSH 技能来自当前作用域可见的注册表；顶部刷新按钮会重新读取目录与正文。</span></div>
         </>
@@ -98,6 +142,8 @@ export default function SkillPane() {
   const off = !selectors.effSkillEnabled(state, sk.name)
   const local = sk.scope === 'workspace' && state.scope.kind === 'workspace'
   const inherited = sk.scope === 'global' && state.scope.kind === 'workspace'
+  const draft = selectors.skillDraft(state, sk.name) ?? draftOf(sk)
+  const dirty = selectors.skillDirty(state, sk.name)
   return (
     <>
       <div className="editor-head">
@@ -112,7 +158,7 @@ export default function SkillPane() {
           {off && <span className="tag">已停用</span>}
         </div>
       </div>
-      <div className="editor-body">
+      <div className="editor-body" data-skill-pane data-name={sk.name}>
         <dl className="meta-grid">
           <dt>位置</dt><dd>{sk.scope === 'global' ? '~/.dsh/skills/' + sk.name + '/SKILL.md' : '.dsh/skills/（工作区）'}</dd>
           <dt>体积</dt><dd>{selectors.formatKB(sk.bytes)} KB</dd>
@@ -125,13 +171,20 @@ export default function SkillPane() {
           <div className="seg" role="tablist" aria-label="SKILL.md 显示方式">
             <button role="tab" aria-selected={view === 'preview'} data-skillview="preview"
               className={'btn small' + (view === 'preview' ? ' active' : '')} onClick={() => setView('preview')}>预览</button>
-            <button role="tab" aria-selected={view === 'raw'} data-skillview="raw"
-              className={'btn small' + (view === 'raw' ? ' active' : '')} onClick={() => setView('raw')}>原文</button>
+            <button role="tab" aria-selected={view === 'edit'} data-skill-edit data-skillview="edit"
+              className={'btn small' + (view === 'edit' ? ' active' : '')} onClick={() => setView('edit')}>编辑</button>
           </div>
         </div>
         {view === 'preview'
           ? <div className="skilldoc"><Markdown source={skillFile(sk)} /></div>
-          : <pre className="md-raw" data-skillraw>{skillFile(sk)}</pre>}
+          : <SkillEditor
+              name={sk.name}
+              draft={draft}
+              dirty={dirty}
+              onChange={(patch) => actions.setSkillDraft(sk.name, patch)}
+              onSave={() => { void actions.saveSkill(sk.name) }}
+              onRevert={() => actions.revertSkill(sk.name)}
+            />}
         <div className="detail-actions">
           <button className="btn small" data-sktoggle disabled={!!sk.bundled} onClick={() => actions.toggleSkill(sk.name)}>{off ? '启用' : '停用'}</button>
           {sk.scope === 'global'
@@ -142,7 +195,7 @@ export default function SkillPane() {
           {state.skDelConfirm === sk.name
             ? <><button className="btn danger small" data-skdel="yes" onClick={() => actions.deleteSkill(sk.name)}>{local ? '确认删除' : '确认停用'}</button>
                 <button className="btn small" onClick={() => actions.setSkDelConfirm(null)}>取消</button></>
-            : <button className="btn small" data-skdel onClick={() => actions.setSkDelConfirm(sk.name)}>{local ? '删除' : '在本层停用'}</button>}
+            : <button className="btn small" data-skill-delete data-skdel onClick={() => actions.setSkDelConfirm(sk.name)}>{local ? '删除' : '在本层停用'}</button>}
         </div>
       </div>
       <div className="editor-foot"><span className="hint">技能定义按作用域保存：工作区同名定义覆盖全局，其他工作区不受影响。停用只影响当前作用域；删除工作区定义后恢复继承全局。</span></div>

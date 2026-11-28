@@ -556,3 +556,27 @@ main.col:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px;
 .effective-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; }
 .effective-row .effective-select { flex: 1; }
 .lane-tabs { margin: 0 0 8px; flex-wrap: wrap; }
+/* ===== 技能编辑 / DSH 源文件编辑 ===== */
+.skill-editor { display: flex; flex-direction: column; gap: 2px; }
+.skill-editor .f-input { width: 100%; }
+.skill-editor .f-area { width: 100%; min-height: 74px; }
+.skill-editor .skill-text { width: 100%; min-height: 300px; resize: vertical; background: var(--bg); border: 1px solid var(--line-strong); border-radius: 6px; color: var(--text); font: 12px/1.6 var(--mono); padding: 9px 11px; }
+.skill-editor .skill-text:focus { outline: none; border-color: var(--accent-line); }
+.skill-editor .f-input:focus, .skill-editor .f-area:focus { outline: none; border-color: var(--accent-line); }
+.skill-invocation { display: flex; gap: 16px; margin: 10px 0 2px; font-size: 11.5px; color: var(--muted); flex-wrap: wrap; }
+.skill-invocation label { display: inline-flex; align-items: center; gap: 5px; }
+.skill-invocation input { accent-color: var(--accent); }
+.skill-dirty { color: var(--faint); }
+.skill-dirty.on { color: var(--warn); font-weight: 600; }
+.skill-editor .editor-meta { flex-wrap: wrap; }
+.skill-source { display: flex; flex-direction: column; gap: 8px; }
+.source-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
+.source-path { min-width: 0; max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 11px/1.4 var(--mono); color: var(--faint); }
+.source-toolbar .grow { flex: 1; }
+.source-status.status-saving, .source-status.status-loading { color: var(--accent); border-color: var(--accent-line); }
+.source-status.status-saved { color: var(--ok); border-color: color-mix(in oklab, var(--ok) 35%, var(--line)); }
+.source-status.status-conflict, .source-status.status-error { color: var(--danger); border-color: color-mix(in oklab, var(--danger) 35%, var(--line)); }
+.source-conflict { padding: 8px 10px; border-radius: 8px; border: 1px solid color-mix(in oklab, var(--danger) 35%, var(--line)); background: color-mix(in oklab, var(--danger) 7%, var(--panel)); color: var(--danger); font-size: 11.5px; }
+.source-error { padding: 8px 10px; border-radius: 8px; border: 1px dashed color-mix(in oklab, var(--danger) 35%, var(--line)); color: var(--danger); font-size: 11.5px; }
+.skill-source-text { width: 100%; min-height: 360px; resize: vertical; background: var(--bg); border: 1px solid var(--line-strong); border-radius: 6px; color: var(--text); font: 12px/1.6 var(--mono); padding: 9px 11px; }
+.skill-source-text:focus { outline: none; border-color: var(--accent-line); }

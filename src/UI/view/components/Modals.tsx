@@ -14,18 +14,21 @@ function SkillAdd() {
     if (ref.current) ref.current.click()
   }
   const onChange = (e: ChangeEvent<HTMLInputElement>, fromFolder: boolean) => {
-    actions.addSkillsFromFiles(e.target.files, fromFolder)
+    const files = e.target.files
     actions.closeModal()
+    void actions.addSkillsFromFiles(files, fromFolder).catch((err: unknown) => {
+      actions.toast('导入技能失败：' + (err instanceof Error ? err.message : String(err)))
+    })
   }
   const dirProps = { webkitdirectory: '' } as unknown as InputHTMLAttributes<HTMLInputElement>
   return (
     <>
       <div className="hint">导入到 {selectors.scopeCrumb(state.scope, state.meta)}。文件会被解析为 SKILL.md，重名自动跳过。</div>
       <div className="pick-row">
-        <button className="btn" data-skpick="file" onClick={() => pick(false)}>选择 .md / .zip 文件</button>
+        <button className="btn" data-skpick="file" onClick={() => pick(false)}>选择 .md / .markdown 文件</button>
         <button className="btn" data-skpick="dir" onClick={() => pick(true)}>选择技能目录</button>
       </div>
-      <input ref={fileRef} id="skillFileInput" type="file" multiple accept=".md,.zip" hidden
+      <input ref={fileRef} id="skillFileInput" type="file" multiple accept=".md,.markdown,text/markdown" hidden
         onChange={(e) => onChange(e, false)} />
       <input ref={dirRef} id="skillDirInput" type="file" multiple hidden
         {...dirProps} onChange={(e) => onChange(e, true)} />

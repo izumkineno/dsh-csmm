@@ -8,10 +8,24 @@ import type {
   Scope,
   SkillCatalogResult,
   DshSkillDetailResult,
+  SkillSourceSaveResult,
   Snapshot,
 } from '../shared/types'
 
 const ROUTE = '/dsh-csmm/rpc'
+
+/** A failed host RPC with the host error code and HTTP status preserved. */
+export class HostError extends Error {
+  readonly code: string
+  readonly status: number | undefined
+
+  constructor(code: string, status: number | undefined, message: string) {
+    super(message)
+    this.name = 'HostError'
+    this.code = code
+    this.status = status
+  }
+}
 
 export interface RemoteHost extends HostPort {
   snapshot(scope?: Scope): Promise<Snapshot>
@@ -20,6 +34,7 @@ export interface RemoteHost extends HostPort {
   listPrompts(sessionId?: string): Promise<PromptSectionView[]>
   listDshSkills(scope?: Scope): Promise<SkillCatalogResult>
   getDshSkill(name: string, scope?: Scope): Promise<DshSkillDetailResult>
+  saveDshSkillSource(name: string, text: string, expectedSha256: string, scope: Scope): Promise<SkillSourceSaveResult>
 }
 
 export async function requestRpc(
@@ -30,23 +45,38 @@ export async function requestRpc(
   prompts?: PromptSectionView[]
   catalog?: SkillCatalogResult
   detail?: DshSkillDetailResult
+  saved?: SkillSourceSaveResult
 }> {
   const response = await fetch(ROUTE, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   })
-  const payload = (await response.json()) as {
+  const raw = await response.text()
+  let payload: {
     ok?: boolean
     snapshot?: Snapshot
     outcome?: ConnectionOutcome
     prompts?: PromptSectionView[]
     catalog?: SkillCatalogResult
     detail?: DshSkillDetailResult
+    saved?: SkillSourceSaveResult
     error?: { code?: string; message?: string }
+  } = {}
+  try {
+    payload = raw ? JSON.parse(raw) : {}
+  } catch {
+    payload = {}
   }
   if (!response.ok || payload.ok === false) {
-    throw new Error(payload.error?.message ?? `RPC failed: ${response.status}`)
+    if (payload.error?.code) {
+      throw new HostError(payload.error.code, response.status, payload.error.message ?? 'RPC failed')
+    }
+    throw new HostError(
+      'E_HTTP',
+      response.status,
+      payload.error?.message ?? (raw || `RPC failed: ${response.status}`),
+    )
   }
   return payload
 }
@@ -122,6 +152,21 @@ export function createRemoteHost(snapshot: Snapshot, workspaceRoot?: string): Re
       const result = await requestRpc({ method: 'skillDetail', skillName: name, scope, workspaceRoot: root })
       if (!result.detail) throw new Error('detail missing from response')
       return result.detail
+    },
+    async saveDshSkillSource(name: string, text: string, expectedSha256: string, scope: Scope) {
+      if (!scope || scope.kind !== 'workspace' || !scope.id) {
+        throw new HostError('E_PAYLOAD', undefined, '工作区技能源保存必须带 scope.id')
+      }
+      const result = await requestRpc({
+        method: 'skillSourceSave',
+        skillName: name,
+        scope,
+        workspaceRoot: root,
+        text,
+        expectedSha256,
+      })
+      if (!result.saved) throw new HostError('E_PROTOCOL', undefined, 'saved missing from response')
+      return result.saved
     },
   }
 }

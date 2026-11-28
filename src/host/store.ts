@@ -103,22 +103,38 @@ export function backupStore(paths: ScopePaths): void {
 }
 
 export function withLock<T>(paths: ScopePaths, fn: () => T): T {
-  const release = acquireLock(paths)
+  return withFileLock(paths.lock, fn)
+}
+
+export function withFileLock<T>(lockFile: string, fn: () => T): T
+export function withFileLock<T>(lockFile: string, fn: () => Promise<T>): Promise<T>
+export function withFileLock<T>(lockFile: string, fn: () => T | Promise<T>): T | Promise<T> {
+  const release = acquireFileLock(lockFile)
   try {
-    return fn()
-  } finally {
+    const value = fn()
+    if (value && typeof (value as Promise<T>).then === 'function') {
+      return Promise.resolve(value).finally(release)
+    }
     release()
+    return value
+  } catch (error) {
+    release()
+    throw error
   }
 }
 
 export function acquireLock(paths: ScopePaths): () => void {
-  fs.mkdirSync(paths.root, { recursive: true })
+  return acquireFileLock(paths.lock)
+}
+
+function acquireFileLock(lockFile: string): () => void {
+  fs.mkdirSync(path.dirname(lockFile), { recursive: true })
   let fd: number
   try {
-    fd = fs.openSync(paths.lock, 'wx')
+    fd = fs.openSync(lockFile, 'wx')
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-      throw new StoreError('E_LOCKED', `store is locked: ${paths.lock}`)
+      throw new StoreError('E_LOCKED', `store is locked: ${lockFile}`)
     }
     throw error
   }
@@ -132,7 +148,7 @@ export function acquireLock(paths: ScopePaths): () => void {
     if (released) return
     released = true
     try {
-      fs.unlinkSync(paths.lock)
+      fs.unlinkSync(lockFile)
     } catch {
       /* already removed */
     }

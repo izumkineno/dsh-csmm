@@ -23,6 +23,8 @@ export function makeInitialState(bootstrap: Bootstrap): AppState {
     skDelConfirm: null,
     mcpDelConfirm: null,
     drafts: {},
+    skillDrafts: {},
+    sourceState: { status: 'idle' },
     trustDeclined: [],
     modal: null,
     toasts: [],
@@ -90,6 +92,8 @@ export function cloneState(prev: AppState): AppState {
     drafts: Object.fromEntries(
       Object.entries(prev.drafts).map(([k, v]) => [k, Array.isArray(v) ? v.map((it) => ({ ...it })) : { ...v }]),
     ) as AppState['drafts'],
+    skillDrafts: Object.fromEntries(Object.entries(prev.skillDrafts).map(([k, v]) => [k, { ...v }])),
+    sourceState: { ...prev.sourceState },
     trustDeclined: [...prev.trustDeclined],
     modal: prev.modal ? ({ ...prev.modal } as ModalState) : null,
     toasts: [...prev.toasts],

@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto'
+import { promises as fs } from 'node:fs'
+import path from 'node:path'
 import type {
   Bootstrap,
   Command,
@@ -28,8 +31,9 @@ import {
   visibleServers,
   visibleSkills,
 } from '../shared/resolve'
+import { MAX_SKILL_TEXT_BYTES, byteLengthUtf8, normalizeSkillName } from '../shared/skillMarkdown'
 import type { ScopePaths } from './paths'
-import { loadSecrets, loadStore, saveSecrets, saveStore, withLock } from './store'
+import { atomicWrite, loadSecrets, loadStore, saveSecrets, saveStore, withFileLock, withLock } from './store'
 
 export class ServiceError extends Error {
   readonly code: string
@@ -66,6 +70,59 @@ export interface SkillRegistryLike {
   list(options: { cwd?: string }): Promise<DshSkillSummary[]>
   get(name: string, options: { cwd?: string }): Promise<DshSkillDefinition | undefined>
 }
+
+/** One read of an editable SKILL.md; buffer/text/sha256 all come from the same bytes. */
+export interface SkillFileRead {
+  raw: string
+  text: string
+  buffer: Buffer
+  sha256: string
+  mode: number
+  bytes: number
+}
+
+/** A source file inside a trusted workspace that passed the editability checks. */
+export interface SkillSourceTarget extends SkillFileRead {
+  path: string
+}
+
+function sha256Hex(buffer: Buffer): string {
+  return createHash('sha256').update(buffer).digest('hex')
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function sanitizeSkillName(name: string): string {
+  const cleaned = name.replace(/[^A-Za-z0-9._-]/g, '-').replace(/^-+|-+$/g, '').slice(0, 80)
+  return cleaned || 'skill'
+}
+
+async function pruneSkillBackups(dir: string, name: string, keep: number): Promise<void> {
+  const prefix = sanitizeSkillName(name) + '-'
+  let names: string[]
+  try {
+    names = await fs.readdir(dir)
+  } catch {
+    return
+  }
+  const files: Array<{ name: string; time: number }> = []
+  for (const entry of names) {
+    if (!entry.startsWith(prefix)) continue
+    try {
+      const stat = await fs.stat(path.join(dir, entry))
+      files.push({ name: entry, time: stat.mtimeMs })
+    } catch {
+      /* removed concurrently */
+    }
+  }
+  files.sort((a, b) => b.time - a.time)
+  await Promise.all(
+    files.slice(Math.max(0, keep)).map((file) => fs.unlink(path.join(dir, file.name)).catch(() => undefined)),
+  )
+}
+
 
 function toDshSkill(summary: DshSkillSummary): DshSkill {
   const skill: DshSkill = {
@@ -174,14 +231,201 @@ export class CsmmService {
       if (!found) {
         return { errors: ['技能不存在或当前作用域不可见'], ...restricted }
       }
-      return {
-        skill: { ...toDshSkill(found), content: found.content },
-        errors: [],
-        ...restricted,
+      const errors: string[] = []
+      let raw: string | undefined
+      let sha256 = sha256Hex(Buffer.from(found.content, 'utf8'))
+      if (!target.restricted && typeof found.path === 'string' && found.path) {
+        try {
+          const read = await this.readSkillFile(found.path)
+          raw = read.raw
+          sha256 = read.sha256
+        } catch (error) {
+          errors.push('读取技能源文件失败：' + errorMessage(error))
+        }
       }
+      const skill = {
+        ...toDshSkill(found),
+        content: found.content,
+        ...(raw === undefined ? {} : { raw }),
+        sha256,
+      }
+      return { skill, errors, ...restricted }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      return { errors: ['读取 DSH 技能失败：' + message], ...restricted }
+      return { errors: ['读取 DSH 技能失败：' + errorMessage(error)], ...restricted }
+    }
+  }
+
+  /** Read one SKILL.md with an 800k cap and strict UTF-8 decoding. */
+  private async readSkillFile(file: string): Promise<SkillFileRead> {
+    let stat
+    try {
+      stat = await fs.stat(file)
+    } catch {
+      throw new ServiceError('E_SOURCE_MISSING', '源文件不存在或不可读')
+    }
+    if (!stat.isFile()) throw new ServiceError('E_SOURCE_MISSING', '源路径不是文件')
+    if (stat.size > MAX_SKILL_TEXT_BYTES) {
+      throw new ServiceError(
+        'E_SKILL_TOO_LARGE',
+        `技能文件超过 ${MAX_SKILL_TEXT_BYTES} 字节`,
+      )
+    }
+    const buffer = await fs.readFile(file)
+    if (buffer.byteLength > MAX_SKILL_TEXT_BYTES) {
+      throw new ServiceError(
+        'E_SKILL_TOO_LARGE',
+        `技能文件超过 ${MAX_SKILL_TEXT_BYTES} 字节`,
+      )
+    }
+    let raw: string
+    try {
+      raw = new TextDecoder('utf-8', { fatal: true }).decode(buffer)
+    } catch {
+      throw new ServiceError('E_SKILL_ENCODING', '技能文件不是合法的 UTF-8')
+    }
+    return {
+      raw,
+      text: raw,
+      buffer,
+      sha256: sha256Hex(buffer),
+      mode: stat.mode,
+      bytes: buffer.byteLength,
+    }
+  }
+
+  /**
+   * Resolve one workspace-origin SKILL.md to an editable file inside the
+   * current workspace root. Global/user/bundled sources are read-only.
+   */
+  private async resolveEditableSource(name: string, scope: Scope): Promise<SkillSourceTarget> {
+    const requested = this.requestedScope(scope)
+    if (requested.kind !== 'workspace' || !requested.id) {
+      throw new ServiceError('E_WORKSPACE_UNTRUSTED', '只能编辑工作区技能源文件')
+    }
+    if (!this.options.workspace || this.options.workspace.id !== requested.id) {
+      throw new ServiceError('E_WORKSPACE_UNTRUSTED', '技能不属于当前工作区绑定')
+    }
+    const target = this.dshTarget(scope)
+    if (!target.registry) throw new ServiceError('E_SOURCE_MISSING', '宿主未提供技能注册表')
+    if (target.restricted || !target.cwd) {
+      throw new ServiceError('E_WORKSPACE_UNTRUSTED', '工作区未受信任，不能编辑源文件')
+    }
+
+    let workspaceReal: string
+    try {
+      workspaceReal = await fs.realpath(target.cwd)
+    } catch {
+      throw new ServiceError('E_WORKSPACE_UNTRUSTED', '工作区根路径不可用')
+    }
+
+    let found: DshSkillDefinition | undefined
+    try {
+      found = await target.registry.get(name, { cwd: target.cwd })
+    } catch (error) {
+      throw new ServiceError('E_NOT_FOUND', '读取技能失败：' + errorMessage(error))
+    }
+    if (!found) throw new ServiceError('E_NOT_FOUND', `技能不存在：${name}`)
+    if (toDshSkill(found).origin !== 'workspace') {
+      throw new ServiceError('E_SOURCE_READONLY', '全局、用户或内置技能不能直接编辑')
+    }
+
+    const file = found.path
+    if (!file || !path.isAbsolute(file) || path.basename(file).toLowerCase() !== 'skill.md') {
+      throw new ServiceError('E_SOURCE_MISSING', '技能没有可编辑的 SKILL.md 源文件')
+    }
+
+    let stat
+    try {
+      stat = await fs.lstat(file)
+    } catch {
+      throw new ServiceError('E_SOURCE_MISSING', '源文件不存在或不可读')
+    }
+    if (stat.isSymbolicLink()) {
+      throw new ServiceError('E_PATH_ESCAPE', '源文件是符号链接')
+    }
+    if (!stat.isFile()) throw new ServiceError('E_SOURCE_MISSING', '源路径不是文件')
+
+    let fileReal: string
+    try {
+      fileReal = await fs.realpath(file)
+    } catch {
+      throw new ServiceError('E_SOURCE_MISSING', '源文件不存在或不可读')
+    }
+    const relative = path.relative(workspaceReal, fileReal)
+    if (
+      !relative ||
+      relative === '..' ||
+      relative.startsWith('..' + path.sep) ||
+      path.isAbsolute(relative)
+    ) {
+      throw new ServiceError('E_PATH_ESCAPE', '源文件不在当前工作区内')
+    }
+
+    return { path: fileReal, ...(await this.readSkillFile(fileReal)) }
+  }
+
+
+  /**
+   * Replace a workspace-origin SKILL.md after an in-lock SHA-256 CAS check.
+   * A backup of the previous bytes is written under the plugin's workspace
+   * directory; the store, revision and secrets are untouched.
+   */
+  async saveDshSkillSource(
+    name: string,
+    scope: Scope,
+    text: string,
+    expectedSha256: string,
+  ): Promise<{ path: string; sha256: string }> {
+    if (scope.kind !== 'workspace' || !scope.id) {
+      throw new ServiceError('E_WORKSPACE_UNTRUSTED', '只能编辑工作区技能源文件')
+    }
+    if (typeof text !== 'string' || text.trim().length === 0) {
+      throw new ServiceError('E_PAYLOAD', 'text is required')
+    }
+    if (typeof expectedSha256 !== 'string' || !/^[0-9a-f]{64}$/i.test(expectedSha256)) {
+      throw new ServiceError('E_PAYLOAD', 'expectedSha256 must be a 64-character hex string')
+    }
+    if (byteLengthUtf8(text) > MAX_SKILL_TEXT_BYTES) {
+      throw new ServiceError('E_SKILL_TOO_LARGE', `技能文件超过 ${MAX_SKILL_TEXT_BYTES} 字节`)
+    }
+    const binding = this.workspace()
+    if (!binding || binding.id !== scope.id) {
+      throw new ServiceError('E_WORKSPACE_UNTRUSTED', '技能不属于当前工作区绑定')
+    }
+
+    // Fast-fail outside the lock; the authoritative CAS check re-reads inside.
+    await this.resolveEditableSource(name, scope)
+    const lockFile = path.join(binding.paths.root, 'skill-source.lock')
+    const backupDir = path.join(binding.paths.root, 'skill-backups')
+    const expected = expectedSha256.toLowerCase()
+
+    try {
+      return await withFileLock(lockFile, async () => {
+        const fresh = await this.resolveEditableSource(name, scope)
+        if (fresh.sha256 !== expected) {
+          throw new ServiceError(
+            'E_SKILL_CONFLICT',
+            `源文件已变更（当前 ${fresh.sha256}），请重新载入后再保存`,
+          )
+        }
+        if (text === fresh.text) return { path: fresh.path, sha256: fresh.sha256 }
+
+        await fs.mkdir(backupDir, { recursive: true })
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+        const backup = path.join(
+          backupDir,
+          `${sanitizeSkillName(name)}-${fresh.sha256.slice(0, 8)}-${stamp}.md`,
+        )
+        await fs.writeFile(backup, fresh.buffer, { mode: 0o600 })
+        await pruneSkillBackups(backupDir, name, 20)
+        atomicWrite(fresh.path, text, fresh.mode & 0o777)
+        return { path: fresh.path, sha256: sha256Hex(Buffer.from(text, 'utf8')) }
+      })
+    } catch (error) {
+      if ((error as { code?: string }).code === 'E_LOCKED') {
+        throw new ServiceError('E_LOCKED', errorMessage(error))
+      }
+      throw error
     }
   }
 
@@ -517,7 +761,22 @@ export class CsmmService {
   }
 
   private normalizeSkill(skill: SkillRecord, scope: Scope): SkillRecord {
-    return { ...skill, scope: scope.kind, wsId: scope.kind === 'workspace' ? scope.id ?? undefined : undefined }
+    const text = typeof skill.text === 'string' ? skill.text : ''
+    const next: SkillRecord = {
+      ...skill,
+      name: normalizeSkillName(skill.name) || skill.name,
+      scope: scope.kind,
+      wsId: scope.kind === 'workspace' ? scope.id ?? undefined : undefined,
+      bytes: Buffer.byteLength(text, 'utf8'),
+      model: Boolean(skill.model),
+      user: Boolean(skill.user),
+    }
+    if (typeof skill.whenToUse === 'string' && skill.whenToUse.trim()) {
+      next.whenToUse = skill.whenToUse.trim()
+    } else {
+      delete next.whenToUse
+    }
+    return next
   }
 
   private normalizeServer(server: McpServerRecord, scope: Scope): McpServerRecord {

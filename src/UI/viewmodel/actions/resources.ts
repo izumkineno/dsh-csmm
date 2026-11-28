@@ -1,12 +1,52 @@
-import type { Actions, McpServer, Scope, Skill } from '../../contracts'
+import type { Actions, Group, McpServer, Scope, Skill, SkillDraft } from '../../contracts'
 import { scopeKey, selectors } from '../../model/selectors'
+import { MAX_SKILL_TEXT_BYTES, buildWorkspaceSkillFromDsh, byteLengthUtf8, parseSkillMarkdown, selectSkillSources } from '../../../shared/skillMarkdown'
 import type { ActionContext } from '../action-context'
 import { copyGroups, copyServer, currentDef, ensureServer, ensureSkill, removeGroupRefs, resolveServer, resolveSkill } from '../helpers'
 
+const draftFromRecord = (skill: Skill): SkillDraft => ({
+  label: skill.label,
+  desc: skill.desc,
+  text: skill.text,
+  model: skill.model,
+  user: skill.user,
+})
+
+async function sha256Text(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
 export function createResourceActions(
   ctx: ActionContext,
-): Pick<Actions, 'toggleSkill' | 'setSkDelConfirm' | 'deleteSkill' | 'moveSkill' | 'openSkillDir' | 'addSkillsFromFiles' | 'refreshServers' | 'toggleTool' | 'setAllTools' | 'saveToolList' | 'testConnection' | 'toggleMcp' | 'oauthToggle' | 'deleteMcp' | 'setMcpDelConfirm' | 'restartConnection'> {
-  const { mutate, getState, sync, pushToast, host } = ctx
+): Pick<Actions, 'toggleSkill' | 'setSkDelConfirm' | 'deleteSkill' | 'moveSkill' | 'openSkillDir' | 'addSkillsFromFiles' | 'refreshServers' | 'toggleTool' | 'setAllTools' | 'saveToolList' | 'testConnection' | 'toggleMcp' | 'oauthToggle' | 'deleteMcp' | 'setMcpDelConfirm' | 'restartConnection' | 'setSkillDraft' | 'setDshSourceText' | 'revertSkill' | 'saveSkill' | 'copyDshSkillToWorkspace' | 'saveDshSkillSource' | 'reloadDshSkillSource' | 'retryGroupAppend'> {
+  const { mutate, getState, sync, syncMany, pushToast, toast, host } = ctx
+
+  /** 只把技能追加到当前工作区本层生效组；继承的全局组绝不在本层复制或修改。 */
+  const appendSkillToLocalGroup = async (name: string): Promise<{ ok: boolean; group?: Group; error?: string }> => {
+    const s = getState()
+    const wsId = s.scope.kind === 'workspace' ? s.scope.id : null
+    const group = selectors.localCurrentGroup(s)
+    if (!wsId || !group) return { ok: false, error: '当前没有本层生效配置集' }
+    const next = copyGroups([group])[0]
+    if (!next.items.some((item) => item.kind === 'skill' && item.name === name)) {
+      next.items.push({ kind: 'skill', name })
+    }
+    const result = await syncMany([{
+      type: 'group.save',
+      scope: { kind: 'workspace', id: wsId },
+      group: next,
+    }], { continueOnError: false })
+    if (result.failed.length) return { ok: false, group, error: result.failed[0].error }
+    return { ok: true, group }
+  }
+
+  const retryAppend = async (name: string): Promise<void> => {
+    const result = await appendSkillToLocalGroup(name)
+    if (result.ok) toast('已加入配置集「' + (result.group?.name ?? '') + '」')
+    else toast('加入配置集失败：' + (result.error ?? '未知错误'))
+  }
+
   return {
     // ---- 技能管理 ----
     toggleSkill(name) {
@@ -120,47 +160,280 @@ export function createResourceActions(
       }
     },
     openSkillDir() { mutate((s) => { pushToast(s, s.copy.skillDir) }) },
-    addSkillsFromFiles(files, fromFolder) {
-      mutate((s) => {
-        const scope = s.scope
-        const names: string[] = []
-        const list = Array.from(files || [])
-        if (fromFolder) {
-          const seen: Record<string, boolean> = {}
-          list.forEach((f) => {
-            const rel = f.webkitRelativePath || f.name
-            const top = rel.split('/')[0]
-            if (!seen[top]) { seen[top] = true; names.push(top) }
-          })
-        } else {
-          const bundle = list.length === 1 && /\.zip$/i.test(list[0].name)
-          if (bundle) names.push(list[0].name.replace(/\.zip$/i, ''))
-          else list.forEach((f) => {
-            if (!/\.(md|markdown)$/i.test(f.name)) return
-            names.push(f.name.replace(/\.(md|markdown)$/i, ''))
-          })
-        }
-        let added = 0
-        let skipped = 0
-        names.forEach((raw) => {
-          const name = raw.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
-          if (!name || currentDef(s.skills, s, name)) { skipped += 1; return }
-          s.skills.push({
-            name, label: raw, scope: scope.kind === 'global' ? 'global' : 'workspace',
+    async addSkillsFromFiles(files, fromFolder) {
+      const list = Array.from(files || [])
+      if (!list.length) {
+        toast('没有选中文件')
+        return
+      }
+      const scope = { ...getState().scope }
+      const scopeLabel = scope.kind === 'global' ? '全局' : '当前工作区'
+      const byPath = new Map<string, File>()
+      for (const file of list) byPath.set(file.webkitRelativePath || file.name, file)
+      const selection = selectSkillSources(list.map((file) => ({
+        path: file.webkitRelativePath || file.name,
+        size: file.size,
+      })))
+      let skipped = 0
+      let failed = selection.rejected.length
+      const commands: Record<string, unknown>[] = []
+      const commandNames: string[] = []
+      const seen = new Set<string>()
+      for (const picked of selection.picked) {
+        const file = byPath.get(picked.path)
+        if (!file) { failed += 1; continue }
+        try {
+          const raw = await file.text()
+          const parsed = parseSkillMarkdown(raw, picked.fallbackName)
+          const name = parsed.name
+          if (!name) { failed += 1; continue }
+          const exists = getState().skills.some((skill) => skill.name === name && (scope.kind === 'global'
+            ? skill.scope === 'global'
+            : skill.scope === 'workspace' && skill.wsId === scope.id))
+          if (exists || seen.has(name)) { skipped += 1; continue }
+          if (byteLengthUtf8(parsed.text) > 800_000) { failed += 1; continue }
+          seen.add(name)
+          const skill: Skill = {
+            name,
+            label: name,
+            scope: scope.kind === 'global' ? 'global' : 'workspace',
             wsId: scope.kind === 'workspace' ? scope.id ?? undefined : undefined,
-            bytes: 1200, model: true, user: true, enabled: true,
-            desc: s.copy.newSkillDesc, text: s.copy.newSkillText,
-          } as Skill)
-          added += 1
-        })
-        if (added) {
-          const vis = selectors.visibleSkills(s)
-          s.selected.skill = vis.length ? { kind: 'skill', name: vis[vis.length - 1].name } : null
-          pushToast(s, '已添加 ' + added + ' 个技能到' + (scope.kind === 'global' ? '全局' : '当前工作区') + (skipped ? '，跳过 ' + skipped + ' 个' : ''))
-        } else {
-          pushToast(s, skipped ? '没有可添加的技能（当前作用域已有同名定义）' : '没有选中文件')
+            bytes: byteLengthUtf8(parsed.text),
+            model: parsed.model,
+            user: parsed.user,
+            desc: parsed.description,
+            text: parsed.text,
+            enabled: true,
+            ...(parsed.whenToUse ? { whenToUse: parsed.whenToUse } : {}),
+          } as Skill
+          commands.push({ type: 'skill.save', scope, skill })
+          commandNames.push(name)
+        } catch {
+          failed += 1
         }
+      }
+      let saved = 0
+      if (commands.length) {
+        const result = await syncMany(commands, { continueOnError: true })
+        const failedIndexes = new Set(result.failed.map((item) => item.index))
+        const savedNames = commandNames.filter((_, index) => !failedIndexes.has(index))
+        saved = result.applied
+        failed += result.failed.length
+        if (saved > 0 && scopeKey(getState().scope) === scopeKey(scope) && savedNames.length) {
+          const lastName = savedNames[savedNames.length - 1]
+          mutate((s) => { s.selected.skill = { kind: 'skill', name: lastName } })
+        }
+      }
+      const parts = ['已添加 ' + saved + ' 个技能到' + scopeLabel]
+      if (skipped) parts.push('跳过 ' + skipped + ' 个同名')
+      if (failed) parts.push('失败 ' + failed + ' 个')
+      if (saved > 0) {
+        const state = getState()
+        parts.push(selectors.localCurrentGroup(state)
+          ? '当前生效配置集不会自动加入，请在配置集中勾选后生效'
+          : '当前没有生效配置集，保存后不会注入')
+      }
+      toast(parts.join('；'))
+    },
+    setSkillDraft(name, patch) {
+      const state = getState()
+      const record = currentDef(state.skills, state, name) ?? resolveSkill(state, name)
+      if (!record) return
+      mutate((s) => {
+        const base = s.skillDrafts[name] ?? draftFromRecord(record)
+        s.skillDrafts[name] = { ...base, ...patch }
       })
+    },
+    setDshSourceText(text) {
+      mutate((s) => { s.sourceState = { ...s.sourceState, raw: text } })
+    },
+    revertSkill(name) {
+      mutate((s) => { delete s.skillDrafts[name] })
+    },
+    async saveSkill(name) {
+      const state = getState()
+      const record = currentDef(state.skills, state, name) ?? resolveSkill(state, name)
+      if (!record) { toast('技能不存在：' + name); return }
+      const draft = state.skillDrafts[name] ?? draftFromRecord(record)
+      const local = currentDef(state.skills, state, name)
+      const base: Skill | null = local ?? (state.scope.kind === 'workspace'
+        ? { ...record, scope: 'workspace', wsId: state.scope.id ?? undefined }
+        : record)
+      if (!base) { toast('技能不存在：' + name); return }
+      mutate((s) => { ensureSkill(s, name) })
+      const scope: Scope = base.scope === 'global'
+        ? { kind: 'global', id: null }
+        : { kind: 'workspace', id: base.wsId }
+      const skill: Skill = {
+        ...base,
+        label: draft.label,
+        desc: draft.desc,
+        text: draft.text,
+        model: draft.model,
+        user: draft.user,
+        bytes: byteLengthUtf8(draft.text),
+      }
+      const result = await syncMany([{ type: 'skill.save', scope, skill }], { continueOnError: false })
+      if (result.failed.length) { toast('保存技能失败：' + result.failed[0].error); return }
+      mutate((s) => { delete s.skillDrafts[name] })
+      toast('已保存技能 ' + name)
+    },
+    async copyDshSkillToWorkspace(name) {
+      const state = getState()
+      const dsh = selectors.dshSkill(state, name)
+      if (!dsh) { toast('DSH 技能不存在：' + name); return }
+      if (dsh.origin !== 'global') { toast('只有全局 DSH 技能可以复制到工作区'); return }
+      const wsId = state.scope.kind === 'workspace' ? state.scope.id : null
+      if (!wsId) { toast('请先切换到目标工作区'); return }
+      const existing = state.skills.find((skill) => skill.name === name && skill.scope === 'workspace' && skill.wsId === wsId)
+      if (existing) {
+        mutate((s) => {
+          s.selected.skill = { kind: 'skill', name }
+          s.dshDoc = { status: 'idle' }
+          s.sourceState = { status: 'idle' }
+        })
+        toast('当前工作区已有同名插件技能，已选中')
+        return
+      }
+      if (!host.getDshSkill) { toast('宿主未提供技能正文接口'); return }
+      const scope: Scope = { kind: 'workspace', id: wsId }
+      try {
+        let detail = state.dshDoc.status === 'ready' && state.dshDoc.name === name ? state.dshDoc.detail : undefined
+        if (!detail || !detail.sha256) {
+          const loaded = await host.getDshSkill(name, scope)
+          if (!loaded.skill) { toast('读取 DSH 技能失败：' + (loaded.errors[0] ?? '正文为空')); return }
+          detail = loaded.skill
+        }
+        let before = detail.sha256
+        if (!before) before = await sha256Text(detail.content)
+        if (!before) { toast('无法校验源技能 SHA-256，已取消复制'); return }
+        const skill = buildWorkspaceSkillFromDsh(detail, wsId)
+        const saved = await syncMany([{ type: 'skill.save', scope, skill }], { continueOnError: false })
+        if (saved.failed.length) { toast('保存副本失败：' + saved.failed[0].error); return }
+        const afterResult = await host.getDshSkill(name, scope)
+        const afterDetail = afterResult.skill
+        const after = afterDetail ? (afterDetail.sha256 ?? await sha256Text(afterDetail.content)) : undefined
+        if (!after || after !== before) {
+          const rollback = await syncMany([{ type: 'skill.delete', scope, name }], { continueOnError: false })
+          toast(rollback.failed.length
+            ? '副本已保存但源已变化，请手动删除副本'
+            : '源技能在复制期间被修改，已撤销副本，请重试')
+          return
+        }
+        const localGroup = selectors.localCurrentGroup(getState())
+        if (localGroup) {
+          const appended = await appendSkillToLocalGroup(name)
+          if (appended.ok) toast('已复制并加入配置集「' + (appended.group?.name ?? localGroup.name) + '」')
+          else {
+            mutate((s) => pushToast(
+              s,
+              '技能已保存，但加入配置集失败：' + (appended.error ?? '未知错误'),
+              '重试加入配置集',
+              () => { void retryAppend(name) },
+              6000,
+            ))
+            toast('已复制技能；加入配置集失败')
+          }
+        } else if (selectors.currentGroup(getState())) {
+          toast('已保存；当前生效组继承自全局，不能追加；请新建本地配置集后勾选')
+        } else {
+          toast('已保存；当前没有生效配置集，技能不会注入；请先在配置集与生效页新建并启用')
+        }
+        mutate((s) => {
+          s.selected.skill = { kind: 'skill', name }
+          s.dshDoc = { status: 'idle' }
+          s.sourceState = { status: 'idle' }
+        })
+      } catch (err: unknown) {
+        toast('复制技能失败：' + (err instanceof Error ? err.message : String(err)))
+      }
+    },
+    async saveDshSkillSource(name, text) {
+      const state = getState()
+      const detail = state.dshDoc.status === 'ready' && state.dshDoc.name === name ? state.dshDoc.detail : undefined
+      if (!detail || detail.origin !== 'workspace') { toast('只有工作区 DSH 技能支持源文件编辑'); return }
+      if (!detail.sha256) { toast('源文件缺少 SHA-256，无法安全保存'); return }
+      if (!host.saveDshSkillSource) { toast('宿主未提供源文件保存接口'); return }
+      const scope: Scope = { ...state.scope }
+      if (scope.kind !== 'workspace' || !scope.id) { toast('保存源文件需要工作区作用域'); return }
+      if (!text.trim()) {
+        mutate((s) => {
+          if (s.dshDoc.name === name) s.sourceState = { status: 'error', name, raw: text, sha256: detail.sha256, error: '源文件正文不能为空' }
+        })
+        toast('源文件正文不能为空')
+        return
+      }
+      if (byteLengthUtf8(text) > MAX_SKILL_TEXT_BYTES) {
+        mutate((s) => {
+          if (s.dshDoc.name === name) s.sourceState = { status: 'error', name, raw: text, sha256: detail.sha256, error: '源文件超过 800000 字节' }
+        })
+        toast('源文件超过 800000 字节')
+        return
+      }
+      const expected = detail.sha256
+      mutate((s) => {
+        if (s.dshDoc.name === name) s.sourceState = { status: 'saving', name, raw: text, sha256: expected }
+      })
+      try {
+        const saved = await host.saveDshSkillSource(name, text, expected, scope)
+        mutate((s) => {
+          if (scopeKey(s.scope) !== scopeKey(scope)) return
+          if (s.dshDoc.name === name && s.dshDoc.detail) {
+            s.dshDoc.detail = { ...s.dshDoc.detail, raw: text, sha256: saved.sha256 }
+          }
+          s.sourceState = { status: 'saved', name, raw: text, sha256: saved.sha256 }
+        })
+        toast('源文件已保存；重开会话后生效')
+      } catch (err: unknown) {
+        if (scopeKey(getState().scope) !== scopeKey(scope)) return
+        const code = (err as { code?: string } | null)?.code
+        const message = err instanceof Error ? err.message : String(err)
+        const conflictSha = /([0-9a-f]{64})/i.exec(message)?.[1] ?? expected
+        mutate((s) => {
+          if (s.dshDoc.name !== name) return
+          s.sourceState = code === 'E_SKILL_CONFLICT'
+            ? { status: 'conflict', name, raw: text, sha256: expected, error: message, conflictSha }
+            : { status: 'error', name, raw: text, sha256: expected, error: message }
+        })
+        toast('保存源文件失败：' + message)
+      }
+    },
+    async reloadDshSkillSource(name) {
+      if (!host.getDshSkill) { toast('宿主未提供技能正文接口'); return }
+      const scope: Scope = { ...getState().scope }
+      const key = scopeKey(scope)
+      mutate((s) => {
+        s.dshDoc = { status: 'loading', name }
+        s.sourceState = { status: 'loading', name }
+      })
+      try {
+        const result = await host.getDshSkill(name, scope)
+        if (scopeKey(getState().scope) !== key) return
+        mutate((s) => {
+          if (s.dshDoc.name !== name) return
+          if (!result.skill) {
+            const error = result.errors[0] ?? '技能正文为空'
+            s.dshDoc = { status: 'error', name, error }
+            s.sourceState = { status: 'error', name, error }
+            return
+          }
+          const detail = result.skill
+          s.dshDoc = { status: 'ready', name, detail, error: null }
+          s.sourceState = detail.raw !== undefined
+            ? { status: 'ready', name, raw: detail.raw, sha256: detail.sha256 }
+            : { status: 'ready', name, sha256: detail.sha256 }
+        })
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        mutate((s) => {
+          if (s.dshDoc.name !== name) return
+          s.dshDoc = { status: 'error', name, error: message }
+          s.sourceState = { status: 'error', name, error: message }
+        })
+      }
+    },
+    async retryGroupAppend(name) {
+      await retryAppend(name)
     },
     refreshServers() { mutate((s) => { pushToast(s, s.copy.refreshServers) }) },
 

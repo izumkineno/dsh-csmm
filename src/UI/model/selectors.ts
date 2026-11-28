@@ -21,6 +21,7 @@ import type {
   Section,
   Selectors,
   Skill,
+  SkillDraft,
   WinningLayer,
 } from '../contracts'
 
@@ -381,6 +382,27 @@ export const currentGroup = (state: AppState): Group | null => {
   return id ? state.groups.find((g) => g.id === id) ?? null : null
 }
 
+/** 本层生效组；继承自全局时返回 null，用于判断“不能追加，只能提示”。 */
+export const localCurrentGroup = (state: AppState): Group | null => {
+  const id = state.activeGroup[scopeKey(state.scope)]
+  if (!id) return null
+  return state.groups.find((g) => g.id === id && sameScope(g.scope, state.scope)) ?? null
+}
+
+export const skillDraft = (state: AppState, name: string): SkillDraft | null => state.skillDrafts[name] ?? null
+
+export const skillDirty = (state: AppState, name: string): boolean => {
+  const draft = state.skillDrafts[name]
+  if (!draft) return false
+  const record = resolvedSkill(state, name)
+  if (!record) return false
+  return draft.label !== record.label
+    || draft.desc !== record.desc
+    || draft.text !== record.text
+    || draft.model !== record.model
+    || draft.user !== record.user
+}
+
 /** 当前 tab 的资源选中项；分组与生效页没有资源选中项。 */
 export const currentResource = (state: AppState): ResourceRef | null => {
   if (state.tab === 'prompt') return state.selected.prompt
@@ -481,6 +503,9 @@ export const selectors: Selectors = {
   isTrustedWorkspace,
   groupSources,
   currentGroup,
+  localCurrentGroup,
+  skillDraft,
+  skillDirty,
   currentResource,
   effSkillEnabled,
   effServerEnabled,

@@ -12,6 +12,7 @@ import {
   loadStore,
   saveSecrets,
   saveStore,
+  withFileLock,
   withLock,
 } from '../../src/host/store'
 
@@ -80,6 +81,23 @@ test('lock is exclusive and reusable after release', () => {
   const value = withLock(paths, () => 42)
   assert.equal(value, 42)
   assert.equal(fs.existsSync(paths.lock), false)
+})
+
+test('withFileLock serializes async work and releases the lock', async () => {
+  const root = tempRoot()
+  const lock = path.join(root, 'nested', 'skill-source.lock')
+  const first = withFileLock(lock, async () => {
+    assert.equal(fs.existsSync(lock), true)
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    return 7
+  })
+  await assert.rejects(
+    async () => withFileLock(lock, async () => 8),
+    (error: unknown) => error instanceof StoreError && error.code === 'E_LOCKED',
+  )
+  assert.equal(await first, 7)
+  assert.equal(fs.existsSync(lock), false)
+  assert.equal(withLock(scopePaths(root), () => 42), 42)
 })
 
 test('secrets are stored separately and normalize missing data', () => {

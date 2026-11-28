@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -148,6 +149,126 @@ test('skillCatalog returns the DSH registry skills for the requested scope', asy
 
   const missing = await handleRpc(deps(service), { method: 'skillDetail' })
   assert.equal(missing.status, 400)
+})
+
+
+function skillSourceService(options: { globalSource?: boolean } = {}) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-csmm-http-save-'))
+  const workspaceRoot = path.join(root, 'repo')
+  const file = path.join(workspaceRoot, 'skills', 'edit', 'SKILL.md')
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  const initial = '---\nname: edit\n---\n\nOLD'
+  fs.writeFileSync(file, initial, 'utf8')
+  const service = new CsmmService({
+    global: scopePaths(path.join(root, 'global')),
+    workspace: { id: 'ws-1', paths: scopePaths(path.join(root, 'state', 'ws-1')) },
+    workspaces: [{ id: 'ws-1', title: 'repo', path: workspaceRoot, trusted: false }],
+    workspaceRoot,
+    registry: {
+      list: async () => [],
+      get: async (name) => (name === 'edit'
+        ? {
+            name: 'edit',
+            description: 'edit',
+            source: options.globalSource ? 'user-dsh' : 'project-dsh',
+            provider: 'test',
+            path: file,
+            invocation: { modelInvocable: true, userInvocable: true },
+            content: 'OLD',
+          }
+        : undefined),
+    },
+  })
+  service.dispatch({ type: 'trust.set', workspaceId: 'ws-1', trusted: true })
+  return { service, file, initial, root }
+}
+
+function sha256(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex')
+}
+
+test('skillSourceSave validates the payload and maps errors to HTTP status codes', async () => {
+  const fixture = skillSourceService()
+  const scope = { kind: 'workspace' as const, id: 'ws-1' }
+  const missing = await handleRpc(deps(fixture.service), {
+    method: 'skillSourceSave',
+    skillName: 'edit',
+    scope,
+    expectedSha256: sha256(fixture.initial),
+  })
+  assert.equal(missing.status, 400)
+  assert.equal((missing.body as { error: { code: string } }).error.code, 'E_PAYLOAD')
+
+  const conflict = await handleRpc(deps(fixture.service), {
+    method: 'skillSourceSave',
+    skillName: 'edit',
+    scope,
+    text: 'REPLACED',
+    expectedSha256: '0'.repeat(64),
+  })
+  assert.equal(conflict.status, 409)
+  assert.equal((conflict.body as { error: { code: string } }).error.code, 'E_SKILL_CONFLICT')
+  assert.equal(fs.readFileSync(fixture.file, 'utf8'), fixture.initial)
+})
+
+test('skillSourceSave writes a workspace source and returns the saved path', async () => {
+  const fixture = skillSourceService()
+  const next = '---\nname: edit\n---\n\nNEW'
+  const result = await handleRpc(deps(fixture.service), {
+    method: 'skillSourceSave',
+    skillName: 'edit',
+    scope: { kind: 'workspace', id: 'ws-1' },
+    text: next,
+    expectedSha256: sha256(fixture.initial),
+  })
+  assert.equal(result.status, 200)
+  const body = result.body as { ok: boolean; saved: { path: string; sha256: string } }
+  assert.equal(body.ok, true)
+  assert.equal(body.saved.path, fixture.file)
+  assert.equal(body.saved.sha256, sha256(next))
+  assert.equal(fs.readFileSync(fixture.file, 'utf8'), next)
+})
+
+test('skillSourceSave maps lock and missing sources to 423 and 404', async () => {
+  const locked = skillSourceService()
+  const lock = path.join(locked.root, 'state', 'ws-1', 'skill-source.lock')
+  fs.mkdirSync(path.dirname(lock), { recursive: true })
+  fs.writeFileSync(lock, 'held')
+  const lockedResult = await handleRpc(deps(locked.service), {
+    method: 'skillSourceSave',
+    skillName: 'edit',
+    scope: { kind: 'workspace', id: 'ws-1' },
+    text: 'NEW',
+    expectedSha256: sha256(locked.initial),
+  })
+  assert.equal(lockedResult.status, 423)
+  assert.equal((lockedResult.body as { error: { code: string } }).error.code, 'E_LOCKED')
+
+  const missing = skillSourceService()
+  fs.unlinkSync(missing.file)
+  const missingResult = await handleRpc(deps(missing.service), {
+    method: 'skillSourceSave',
+    skillName: 'edit',
+    scope: { kind: 'workspace', id: 'ws-1' },
+    text: 'NEW',
+    expectedSha256: sha256(missing.initial),
+  })
+  assert.equal(missingResult.status, 404)
+  assert.equal((missingResult.body as { error: { code: string } }).error.code, 'E_SOURCE_MISSING')
+})
+
+test('skillSourceSave refuses read-only sources with 403', async () => {
+  const fixture = skillSourceService({ globalSource: true })
+  const result = await handleRpc(deps(fixture.service), {
+    method: 'skillSourceSave',
+    skillName: 'edit',
+    scope: { kind: 'workspace', id: 'ws-1' },
+    text: 'NOPE',
+    expectedSha256: sha256(fixture.initial),
+  })
+  assert.equal(result.status, 403)
+  assert.equal((result.body as { error: { code: string } }).error.code, 'E_SOURCE_READONLY')
+  assert.equal(fs.readFileSync(fixture.file, 'utf8'), fixture.initial)
 })
 
 test('unknown methods and missing commands are rejected', async () => {

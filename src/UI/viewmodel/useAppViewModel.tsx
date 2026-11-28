@@ -3,13 +3,14 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Actions, AppState, AppViewModel, HostPort, Scope, ToastItem } from '../contracts'
 import { sameScope, scopeKey, selectors } from '../model/selectors'
-import type { ActionContext } from './action-context'
+import type { ActionContext, SyncOptions, SyncResult } from './action-context'
 import { createLibraryActions } from './actions/library'
 import { createModalActions } from './actions/modals'
 import { createNavigationActions } from './actions/navigation'
 import { createResourceActions } from './actions/resources'
 import { createToastActions } from './actions/toasts'
 import { applyBootstrap, cloneState, makeInitialState } from './state'
+import { commitCommands } from './commit'
 
 const ViewModelContext = createContext<AppViewModel | null>(null)
 
@@ -47,29 +48,23 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
         ? s.meta.workspaces.find((w) => w.id === s.scope.id)?.path
         : undefined
 
-    /** 提交写命令，然后用宿主读模型刷新；失败时保留本地状态并提示。 */
-    const sync = (command: Record<string, unknown>) => {
-      if (!host.send) return
-      const s = stateRef.current
-      const root = workspaceRoot(s)
-      const scope = { ...s.scope }
-      void host
-        .send(command, root ?? '')
-        .then(async () => {
-          if (!host.load) return
-          const bootstrap = await host.load(scope, root ?? '')
-          setState((prev) => applyBootstrap(prev, bootstrap))
-        })
-        .catch((err: unknown) => {
-          toast('保存失败：' + (err instanceof Error ? err.message : String(err)))
-        })
-    }
+    const commit = (commands: Record<string, unknown>[], opts: SyncOptions = {}): Promise<SyncResult> =>
+      commitCommands({
+        host,
+        getState: () => stateRef.current,
+        setState: (updater) => setState(updater),
+        toast,
+        workspaceRoot,
+      }, commands, opts)
+
+    const sync = (command: Record<string, unknown>) => { void commit([command]) }
 
     const ctx: ActionContext = {
       getState: () => stateRef.current,
       mutate,
       host,
       sync,
+      syncMany: commit,
       pushToast,
       toast,
     }
@@ -82,6 +77,8 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
           s.selected = { prompt: null, skill: null, mcp: null }
           s.catalog = { status: 'idle' }
           s.dshDoc = { status: 'idle' }
+          s.skillDrafts = {}
+          s.sourceState = { status: 'idle' }
           const gid = s.activeGroup[scopeKey(scope)]
           s.active = { kind: 'group', id: gid && s.groups.some((g) => g.id === gid && sameScope(g.scope, scope)) ? gid : null }
           if (scope.kind === 'workspace' && scope.id) {
@@ -149,6 +146,7 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
         mutate((s) => {
           s.catalog = { status: 'loading', error: null }
           s.dshDoc = { status: 'idle' }
+          s.sourceState = { status: 'idle' }
         })
         void host
           .listDshSkills(scope)
@@ -168,12 +166,13 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
             ))
           })
       },
-      loadDshSkill(name) {
+      loadDshSkill(name, force = false) {
         const current = stateRef.current.dshDoc
-        if (current.name === name && (current.status === 'loading' || current.status === 'ready')) return
+        if (!force && current.name === name && (current.status === 'loading' || current.status === 'ready')) return
         if (!host.getDshSkill) {
           mutate((s) => {
             s.dshDoc = { status: 'error', name, error: '宿主未提供技能正文接口' }
+            s.sourceState = { status: 'error', name, error: '宿主未提供技能正文接口' }
           })
           return
         }
@@ -181,6 +180,7 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
         const key = scopeKey(scope)
         mutate((s) => {
           s.dshDoc = { status: 'loading', name, error: null }
+          s.sourceState = { status: 'loading', name }
         })
         const isCurrent = (prev: AppState): boolean =>
           scopeKey(prev.scope) === key
@@ -192,14 +192,20 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
             setState((prev) => {
               if (!isCurrent(prev)) return prev
               if (!result.skill) {
+                const error = result.errors[0] ?? '技能正文为空'
                 return {
                   ...prev,
-                  dshDoc: { status: 'error', name, error: result.errors[0] ?? '技能正文为空' },
+                  dshDoc: { status: 'error', name, error },
+                  sourceState: { status: 'error', name, error },
                 }
               }
+              const detail = result.skill
               return {
                 ...prev,
-                dshDoc: { status: 'ready', name, detail: result.skill, error: null },
+                dshDoc: { status: 'ready', name, detail, error: null },
+                sourceState: detail.raw !== undefined
+                  ? { status: 'ready', name, raw: detail.raw, sha256: detail.sha256 }
+                  : { status: 'ready', name, sha256: detail.sha256 },
               }
             })
           })
@@ -207,7 +213,11 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
             const message = err instanceof Error ? err.message : String(err)
             setState((prev) => (
               isCurrent(prev)
-                ? { ...prev, dshDoc: { status: 'error', name, error: message } }
+                ? {
+                    ...prev,
+                    dshDoc: { status: 'error', name, error: message },
+                    sourceState: { status: 'error', name, error: message },
+                  }
                 : prev
             ))
           })
