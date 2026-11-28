@@ -348,14 +348,47 @@ const registrySkills: DshSkillSummary[] = [
   },
 ]
 
-function fakeRegistry(calls: Array<{ cwd?: string }>): SkillRegistryLike {
+function fakeRegistry(
+  calls: Array<{ cwd?: string }>,
+  gets: Array<{ name: string; cwd?: string }> = [],
+): SkillRegistryLike {
   return {
     list: async (options) => {
       calls.push(options)
       return options.cwd ? registrySkills : registrySkills.filter((s) => !s.source.startsWith('project-'))
     },
+    get: async (name, options) => {
+      gets.push({ name, ...options })
+      const pool = options.cwd ? registrySkills : registrySkills.filter((s) => !s.source.startsWith('project-'))
+      const found = pool.find((s) => s.name === name)
+      return found ? { ...found, content: '正文：' + name } : undefined
+    },
   }
 }
+
+test('getDshSkill loads one body for the resolved scope', async () => {
+  const calls: Array<{ cwd?: string }> = []
+  const gets: Array<{ name: string; cwd?: string }> = []
+  const { service, workspaceRoot } = makeService(false, { registry: fakeRegistry(calls, gets) })
+
+  const untrusted = await service.getDshSkill('ws-one', { kind: 'workspace', id: wsId })
+  assert.equal(untrusted.skill, undefined)
+  assert.deepEqual(untrusted.errors, ['技能不存在或当前作用域不可见'])
+  assert.equal(untrusted.restricted, true)
+  assert.deepEqual(gets[0], { name: 'ws-one' })
+
+  service.dispatch({ type: 'trust.set', workspaceId: wsId, trusted: true })
+  const trusted = await service.getDshSkill('ws-one', { kind: 'workspace', id: wsId })
+  assert.equal(trusted.skill?.content, '正文：ws-one')
+  assert.equal(trusted.skill?.origin, 'workspace')
+  assert.equal(trusted.restricted, undefined)
+  assert.deepEqual(gets[1], { name: 'ws-one', cwd: workspaceRoot })
+
+  const missing = await service.getDshSkill('missing')
+  assert.equal(missing.skill, undefined)
+  assert.deepEqual(missing.errors, ['技能不存在或当前作用域不可见'])
+  assert.deepEqual(gets[2], { name: 'missing' })
+})
 
 test('listDshSkills reads the registry and passes cwd only for a trusted workspace', async () => {
   const calls: Array<{ cwd?: string }> = []
@@ -399,9 +432,14 @@ test('listDshSkills is read-only and reports a missing registry without writing'
 
   const failing = new CsmmService({
     global,
-    registry: { list: async () => { throw new Error('registry down') } },
+    registry: {
+      list: async () => { throw new Error('registry down') },
+      get: async () => { throw new Error('registry down') },
+    },
   })
   const failed = await failing.listDshSkills()
   assert.deepEqual(failed.skills, [])
   assert.deepEqual(failed.errors, ['读取 DSH 技能失败：registry down'])
+  const failedDetail = await failing.getDshSkill('global-one')
+  assert.deepEqual(failedDetail.errors, ['读取 DSH 技能失败：registry down'])
 })

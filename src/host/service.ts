@@ -4,6 +4,7 @@ import type {
   CustomPromptRecord,
   Diagnostic,
   DshSkill,
+  DshSkillDetailResult,
   GroupRecord,
   McpServerRecord,
   Scope,
@@ -56,8 +57,36 @@ export interface DshSkillSummary {
   invocation: { modelInvocable: boolean; userInvocable: boolean }
 }
 
+export interface DshSkillDefinition extends DshSkillSummary {
+  /** Markdown body after frontmatter removal. */
+  content: string
+}
+
 export interface SkillRegistryLike {
   list(options: { cwd?: string }): Promise<DshSkillSummary[]>
+  get(name: string, options: { cwd?: string }): Promise<DshSkillDefinition | undefined>
+}
+
+function toDshSkill(summary: DshSkillSummary): DshSkill {
+  const skill: DshSkill = {
+    name: summary.name,
+    description: summary.description,
+    source: summary.source,
+    provider: summary.provider,
+    model: summary.invocation.modelInvocable,
+    user: summary.invocation.userInvocable,
+    origin: summary.source.startsWith('project-') ? 'workspace' : 'global',
+  }
+  if (summary.whenToUse) skill.whenToUse = summary.whenToUse
+  if (summary.path) skill.path = summary.path
+  return skill
+}
+
+interface DshTarget {
+  registry?: SkillRegistryLike
+  cwd?: string
+  restricted: boolean
+  errors: string[]
 }
 
 export interface ServiceOptions {
@@ -96,56 +125,84 @@ export class CsmmService {
    * service; no store or DSH file is written.
    */
   async listDshSkills(scope: Scope = { kind: 'global' }): Promise<SkillCatalogResult> {
-    const state = this.loadMerged()
-    const requested = this.requestedScope(scope)
-    const target = this.resolveScope(requested, state)
-    const restricted = requested.kind === 'workspace' && target.kind === 'global'
+    const target = this.dshTarget(scope)
     const scannedAt = new Date().toISOString()
-    const base = { scannedAt, skills: [] as DshSkill[], errors: [] as string[] }
-    const registry = this.options.registry
-    if (!registry) {
-      return { ...base, errors: ['宿主未提供技能注册表'], ...(restricted ? { restricted: true } : {}) }
-    }
-
-    let cwd: string | undefined
-    if (target.kind === 'workspace') {
-      cwd = this.options.workspaces?.find((w) => w.id === target.id)?.path
-        ?? this.options.workspaceRoot
-      if (!cwd) {
-        return {
-          ...base,
-          errors: ['工作区根路径不可用，未读取项目技能'],
-          ...(restricted ? { restricted: true } : {}),
-        }
+    if (!target.registry || target.errors.length) {
+      return {
+        scannedAt,
+        skills: [],
+        errors: target.errors,
+        ...(target.restricted ? { restricted: true } : {}),
       }
     }
 
     try {
-      const summaries = await registry.list(cwd ? { cwd } : {})
-      const skills = summaries.map((summary) => {
-        const skill: DshSkill = {
-          name: summary.name,
-          description: summary.description,
-          source: summary.source,
-          provider: summary.provider,
-          model: summary.invocation.modelInvocable,
-          user: summary.invocation.userInvocable,
-          origin: summary.source.startsWith('project-') ? 'workspace' : 'global',
-        }
-        if (summary.whenToUse) skill.whenToUse = summary.whenToUse
-        if (summary.path) skill.path = summary.path
-        return skill
-      })
-      return { scannedAt, skills, errors: [], ...(restricted ? { restricted: true } : {}) }
+      const summaries = await target.registry.list(target.cwd ? { cwd: target.cwd } : {})
+      return {
+        scannedAt,
+        skills: summaries.map(toDshSkill),
+        errors: [],
+        ...(target.restricted ? { restricted: true } : {}),
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       return {
         scannedAt,
         skills: [],
         errors: ['读取 DSH 技能失败：' + message],
-        ...(restricted ? { restricted: true } : {}),
+        ...(target.restricted ? { restricted: true } : {}),
       }
     }
+  }
+
+  /**
+   * Read one skill's instruction body on demand. Only the selected skill is
+   * loaded, so the catalog stays small; no store or DSH file is written.
+   */
+  async getDshSkill(
+    name: string,
+    scope: Scope = { kind: 'global' },
+  ): Promise<DshSkillDetailResult> {
+    const target = this.dshTarget(scope)
+    const restricted = target.restricted ? { restricted: true } : {}
+    if (!target.registry || target.errors.length) {
+      return { errors: target.errors, ...restricted }
+    }
+
+    try {
+      const found = await target.registry.get(name, target.cwd ? { cwd: target.cwd } : {})
+      if (!found) {
+        return { errors: ['技能不存在或当前作用域不可见'], ...restricted }
+      }
+      return {
+        skill: { ...toDshSkill(found), content: found.content },
+        errors: [],
+        ...restricted,
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return { errors: ['读取 DSH 技能失败：' + message], ...restricted }
+    }
+  }
+
+  private dshTarget(scope: Scope): DshTarget {
+    const state = this.loadMerged()
+    const requested = this.requestedScope(scope)
+    const target = this.resolveScope(requested, state)
+    const restricted = requested.kind === 'workspace' && target.kind === 'global'
+    const registry = this.options.registry
+    if (!registry) {
+      return { restricted, errors: ['宿主未提供技能注册表'] }
+    }
+    if (target.kind === 'workspace') {
+      const cwd = this.options.workspaces?.find((w) => w.id === target.id)?.path
+        ?? this.options.workspaceRoot
+      if (!cwd) {
+        return { registry, restricted, errors: ['工作区根路径不可用，未读取项目技能'] }
+      }
+      return { registry, cwd, restricted, errors: [] }
+    }
+    return { registry, restricted, errors: [] }
   }
 
   dispatch(command: Command): Snapshot {

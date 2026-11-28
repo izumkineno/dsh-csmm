@@ -1,9 +1,15 @@
 // 唯一的跨层耦合面：模型 / 视图模型 / 视图之间共享的全部类型与接口。
 // 任何一层新增对外能力，先在这里定义契约，再到各自实现里落地。
 
-import type { DshSkill, PromptSectionView, SkillCatalogResult } from '../shared/types'
+import type {
+  DshSkill,
+  DshSkillDetail,
+  DshSkillDetailResult,
+  PromptSectionView,
+  SkillCatalogResult,
+} from '../shared/types'
 
-export type { DshSkill, PromptSectionView, SkillCatalogResult }
+export type { DshSkill, DshSkillDetail, DshSkillDetailResult, PromptSectionView, SkillCatalogResult }
 
 // ---------- 作用域与标签 ----------
 export type ScopeKind = 'global' | 'workspace'
@@ -293,6 +299,14 @@ export interface SkillCatalogState {
   error?: string | null
 }
 
+/** 选中 DSH 技能后按需加载的正文。 */
+export interface SkillDocState {
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  name?: string
+  detail?: DshSkillDetail
+  error?: string | null
+}
+
 export type ModalPatch = Partial<
   Omit<MigrateModal, 'type'> & Omit<ServerFormModal, 'type'> & Omit<RawModal, 'type'>
 >
@@ -330,6 +344,7 @@ export interface AppState {
   skills: Skill[]
   servers: McpServer[]
   catalog: SkillCatalogState
+  dshDoc: SkillDocState
   skillSel: string[]
   q: { skill?: string; mcp?: string }
   showPlugin: boolean
@@ -384,6 +399,8 @@ export interface HostPort {
   listPrompts?(sessionId?: string, presetId?: string): Promise<PromptSectionView[]>
   /** 只读读取 DSH 技能注册表；不导入、不写文件。 */
   listDshSkills?(scope?: Scope): Promise<SkillCatalogResult>
+  /** 按需读取一个 DSH 技能的正文；只读。 */
+  getDshSkill?(name: string, scope?: Scope): Promise<DshSkillDetailResult>
 }
 
 // ---------- 派生数据 ----------
@@ -513,6 +530,8 @@ export interface Actions {
   addSkillsFromFiles(files: FileList | File[] | null, fromFolder: boolean): void
   /** 读取 DSH 技能注册表；扫描结果在技能页内联显示。 */
   loadDshSkills(): void
+  /** 按需读取一个 DSH 技能的正文。 */
+  loadDshSkill(name: string): void
   refreshServers(): void
   toggleTool(serverName: string, toolName: string, on: boolean): void
   setAllTools(serverName: string, on: boolean, names: string[]): void

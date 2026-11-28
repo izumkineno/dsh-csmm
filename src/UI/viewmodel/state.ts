@@ -16,6 +16,7 @@ export function makeInitialState(bootstrap: Bootstrap): AppState {
     skills: bootstrap.skills,
     servers: bootstrap.servers,
     catalog: { status: 'idle' },
+    dshDoc: { status: 'idle' },
     skillSel: [],
     q: {},
     showPlugin: true,
@@ -81,6 +82,10 @@ export function cloneState(prev: AppState): AppState {
             },
           }
         : {}),
+    },
+    dshDoc: {
+      ...prev.dshDoc,
+      ...(prev.dshDoc.detail ? { detail: { ...prev.dshDoc.detail } } : {}),
     },
     drafts: Object.fromEntries(
       Object.entries(prev.drafts).map(([k, v]) => [k, Array.isArray(v) ? v.map((it) => ({ ...it })) : { ...v }]),

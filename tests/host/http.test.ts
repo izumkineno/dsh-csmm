@@ -106,6 +106,17 @@ test('skillCatalog returns the DSH registry skills for the requested scope', asy
           invocation: { modelInvocable: true, userInvocable: false },
         }]
       },
+      get: async (name) => (name === 'http-one'
+        ? {
+            name: 'http-one',
+            description: 'HTTP 技能',
+            whenToUse: '通过 HTTP 提供技能时',
+            source: 'user-dsh',
+            provider: 'filesystem',
+            invocation: { modelInvocable: true, userInvocable: false },
+            content: '# HTTP 正文',
+          }
+        : undefined),
     },
   })
 
@@ -124,6 +135,19 @@ test('skillCatalog returns the DSH registry skills for the requested scope', asy
   assert.equal(body.catalog.skills[0].description, 'HTTP 技能')
   assert.equal(body.catalog.skills[0].model, true)
   assert.equal(body.catalog.skills[0].user, false)
+
+  const detail = await handleRpc(deps(service), {
+    method: 'skillDetail',
+    skillName: 'http-one',
+    scope: { kind: 'global' },
+  })
+  assert.equal(detail.status, 200)
+  const detailBody = detail.body as { detail: { skill?: { name: string; content: string } } }
+  assert.equal(detailBody.detail.skill?.name, 'http-one')
+  assert.equal(detailBody.detail.skill?.content, '# HTTP 正文')
+
+  const missing = await handleRpc(deps(service), { method: 'skillDetail' })
+  assert.equal(missing.status, 400)
 })
 
 test('unknown methods and missing commands are rejected', async () => {

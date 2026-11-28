@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { DSH_SOURCE_LABEL, type Skill } from '../../contracts'
+import { useEffect, useState } from 'react'
+import { DSH_SOURCE_LABEL, type DshSkillDetail, type Skill } from '../../contracts'
 import { useAppViewModel } from '../../viewmodel/useAppViewModel'
 import Markdown from './Markdown'
 import GroupStatus from './GroupStatus'
@@ -11,12 +11,28 @@ function skillFile(sk: Skill): string {
   return lines.join('\n')
 }
 
+function dshSkillFile(sk: DshSkillDetail): string {
+  const lines = ['---', `name: ${sk.name}`, `description: ${sk.description}`]
+  if (sk.whenToUse) lines.push(`when-to-use: ${sk.whenToUse}`)
+  if (!sk.model) lines.push('disable-model-invocation: true')
+  if (!sk.user) lines.push('user-invocable: false')
+  lines.push('---', '', sk.content || '（正文为空）')
+  return lines.join('\n')
+}
+
 export default function SkillPane() {
   const { state, actions, selectors } = useAppViewModel()
   const [view, setView] = useState<'preview' | 'raw'>('preview')
   const skName = state.selected.skill?.kind === 'skill' ? state.selected.skill.name : null
   const sk = selectors.resolvedSkill(state, skName)
   const dsh = skName ? selectors.dshSkill(state, skName) : undefined
+  const dshName = dsh?.name
+  const dshDoc = dshName && state.dshDoc.name === dshName ? state.dshDoc : undefined
+  useEffect(() => {
+    if (!dshName) return
+    if (state.dshDoc.name === dshName && state.dshDoc.status !== 'idle') return
+    actions.loadDshSkill(dshName)
+  }, [dshName, state.dshDoc.name, state.dshDoc.status, actions])
   if (!sk) {
     if (dsh) {
       return (
@@ -38,9 +54,32 @@ export default function SkillPane() {
               <dt>说明</dt><dd>{dsh.description || '无描述'}</dd>
               {dsh.whenToUse && <><dt>何时使用</dt><dd>{dsh.whenToUse}</dd></>}
             </dl>
-            <div className="note" data-dsh-note>由 DSH 技能注册表提供，这里只读；停用或修改请在 DSH 侧进行。</div>
+            <div className="skilldoc-head">
+              <span className="group-label">SKILL.md</span>
+              {dshDoc?.status === 'ready' && (
+                <div className="seg" role="tablist" aria-label="SKILL.md 显示方式">
+                  <button role="tab" aria-selected={view === 'preview'} data-dshview="preview"
+                    className={'btn small' + (view === 'preview' ? ' active' : '')} onClick={() => setView('preview')}>预览</button>
+                  <button role="tab" aria-selected={view === 'raw'} data-dshview="raw"
+                    className={'btn small' + (view === 'raw' ? ' active' : '')} onClick={() => setView('raw')}>原文</button>
+                </div>
+              )}
+            </div>
+            {dshDoc?.status === 'error'
+              ? (
+                <div className="note" data-dsh-doc-error>
+                  读取技能正文失败：{dshDoc.error}
+                  <button className="btn small" data-dshretry onClick={() => actions.loadDshSkill(dsh.name)}>重试</button>
+                </div>
+              )
+              : dshDoc?.status === 'ready' && dshDoc.detail
+                ? (view === 'preview'
+                    ? <div className="skilldoc" data-dshpreview><Markdown source={dshSkillFile(dshDoc.detail)} /></div>
+                    : <pre className="md-raw" data-dshraw>{dshSkillFile(dshDoc.detail)}</pre>)
+                : <div className="note" data-dsh-doc-loading>正在读取技能正文…</div>}
+            <div className="note" data-dsh-note>由 DSH 技能注册表提供，这里只读；正文按需加载，frontmatter 按注册字段重建。停用或修改请在 DSH 侧进行。</div>
           </div>
-          <div className="editor-foot"><span className="hint">DSH 技能来自当前作用域可见的注册表；顶部刷新按钮会重新读取。</span></div>
+          <div className="editor-foot"><span className="hint">DSH 技能来自当前作用域可见的注册表；顶部刷新按钮会重新读取目录与正文。</span></div>
         </>
       )
     }

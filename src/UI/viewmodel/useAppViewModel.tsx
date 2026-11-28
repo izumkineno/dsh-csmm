@@ -81,6 +81,7 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
           s.detail = null
           s.selected = { prompt: null, skill: null, mcp: null }
           s.catalog = { status: 'idle' }
+          s.dshDoc = { status: 'idle' }
           const gid = s.activeGroup[scopeKey(scope)]
           s.active = { kind: 'group', id: gid && s.groups.some((g) => g.id === gid && sameScope(g.scope, scope)) ? gid : null }
           if (scope.kind === 'workspace' && scope.id) {
@@ -147,6 +148,7 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
         const key = scopeKey(scope)
         mutate((s) => {
           s.catalog = { status: 'loading', error: null }
+          s.dshDoc = { status: 'idle' }
         })
         void host
           .listDshSkills(scope)
@@ -162,6 +164,50 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
             setState((prev) => (
               scopeKey(prev.scope) === key
                 ? { ...prev, catalog: { status: 'error', error: message } }
+                : prev
+            ))
+          })
+      },
+      loadDshSkill(name) {
+        const current = stateRef.current.dshDoc
+        if (current.name === name && (current.status === 'loading' || current.status === 'ready')) return
+        if (!host.getDshSkill) {
+          mutate((s) => {
+            s.dshDoc = { status: 'error', name, error: '宿主未提供技能正文接口' }
+          })
+          return
+        }
+        const scope = { ...stateRef.current.scope }
+        const key = scopeKey(scope)
+        mutate((s) => {
+          s.dshDoc = { status: 'loading', name, error: null }
+        })
+        const isCurrent = (prev: AppState): boolean =>
+          scopeKey(prev.scope) === key
+          && prev.selected.skill?.kind === 'skill'
+          && prev.selected.skill.name === name
+        void host
+          .getDshSkill(name, scope)
+          .then((result) => {
+            setState((prev) => {
+              if (!isCurrent(prev)) return prev
+              if (!result.skill) {
+                return {
+                  ...prev,
+                  dshDoc: { status: 'error', name, error: result.errors[0] ?? '技能正文为空' },
+                }
+              }
+              return {
+                ...prev,
+                dshDoc: { status: 'ready', name, detail: result.skill, error: null },
+              }
+            })
+          })
+          .catch((err: unknown) => {
+            const message = err instanceof Error ? err.message : String(err)
+            setState((prev) => (
+              isCurrent(prev)
+                ? { ...prev, dshDoc: { status: 'error', name, error: message } }
                 : prev
             ))
           })

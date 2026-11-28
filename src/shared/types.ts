@@ -61,6 +61,19 @@ export interface DshSkill {
   origin: 'global' | 'workspace'
 }
 
+/** One DSH skill with its instruction body loaded on demand. */
+export interface DshSkillDetail extends DshSkill {
+  /** Markdown body after frontmatter removal, as supplied by the registry. */
+  content: string
+}
+
+export interface DshSkillDetailResult {
+  skill?: DshSkillDetail
+  errors: string[]
+  /** The requested workspace is untrusted, so only the global layer was read. */
+  restricted?: boolean
+}
+
 /** Read-only view of the skills DSH itself has registered for a scope. */
 export interface SkillCatalogResult {
   scannedAt: string
@@ -263,10 +276,12 @@ export interface PromptSectionView {
 }
 
 export interface RpcRequest {
-  method: 'snapshot' | 'dispatch' | 'testConnection' | 'promptList' | 'skillCatalog'
+  method: 'snapshot' | 'dispatch' | 'testConnection' | 'promptList' | 'skillCatalog' | 'skillDetail'
   scope?: Scope
   command?: Command
   server?: McpServerRecord
+  /** Skill name for skillDetail. */
+  skillName?: string
   sessionId?: string
   presetId?: string
 }

@@ -40,6 +40,14 @@ export async function handleRpc(
       const service = await deps.service(request.workspaceRoot)
       return { status: 200, body: { ok: true, catalog: await service.listDshSkills(request.scope) } }
     }
+    if (request.method === 'skillDetail') {
+      if (!request.skillName) return fail(400, 'E_PAYLOAD', 'skillName is required')
+      const service = await deps.service(request.workspaceRoot)
+      return {
+        status: 200,
+        body: { ok: true, detail: await service.getDshSkill(request.skillName, request.scope) },
+      }
+    }
     if (request.method === 'testConnection') {
       if (!request.server) return fail(400, 'E_PAYLOAD', 'server is required')
       if (!deps.probe) {

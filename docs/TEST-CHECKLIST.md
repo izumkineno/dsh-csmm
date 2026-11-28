@@ -207,7 +207,7 @@ EVDIR/<用例编号>/
 | SUM-06 | 缺引用诊断 | 选 `缺引用组` → `设为生效` | 点 `诊断` | 3 条 error：分组引用了不存在的提示词段/技能/MCP 服务器；预览该项显示 `缺失`；预算 5 tok（仅自定义） | 截图 | `selectors.ts`（diagnostics） |
 | DAT-06 | 重启后持久化 | 已做若干保存 | 按 SOP §6 停实例 → 重启 → 重开面板 | 数据、生效组、信任状态与重启前一致；`[RPC] revision` 保持；`[DISK]` 无临时文件残留 | 重启前后 store 拷贝 + snapshot | `store.ts` |
 | UX-04 | 弹窗焦点陷阱 | 打开任意弹窗 | 连续 Tab/Shift+Tab；按 Escape | 焦点在弹窗首尾循环；Escape 关闭并返回焦点；背景 `aria-modal=true` | a11y 输出 | `Modals.tsx` |
-| SKL-23 | DSH 技能注册表内联目录（只读） | DSH 全局与受信任工作区各有已注册技能；另有未信任工作区 | 打开技能页（自动加载）；看 `[data-dshitem]`；点 `[data-sktool=refresh]`；点 DSH 行；切未信任工作区 | 「DSH 技能」段出现；行显示描述/来源/provider；刷新可用；`[data-dsh-pane]` 只读详情含来源、调用策略、说明、路径；未信任工作区只显示全局项 + `[data-dsh-restricted]`；`[REV]`/`[DISK]` 不变 | 截图 + store | `ItemList.tsx`、`SkillPane.tsx`、`selectors.ts`、`service.ts` |
+| SKL-23 | DSH 技能注册表内联目录与按需正文（只读） | DSH 全局与受信任工作区各有已注册技能；另有未信任工作区 | 打开技能页（自动加载）；看 `[data-dshitem]`；点 `[data-sktool=refresh]`；点 DSH 行；等 `[data-dshpreview]`；点 `[data-dshview=raw]`；切未信任工作区 | 「DSH 技能」段出现；行显示描述/来源/provider；刷新可用；`[data-dsh-pane]` 只读详情含来源、调用策略、说明、路径；正文按需加载并能在预览/原文间切换，原文含 `---`、`name:` 与正文；未信任工作区只显示全局项 + `[data-dsh-restricted]`；`[REV]`/`[DISK]` 不变 | 截图 + store | `ItemList.tsx`、`SkillPane.tsx`、`selectors.ts`、`service.ts`、`hostPort.ts` |
 
 ## 5. P2 用例（抽查）
 
