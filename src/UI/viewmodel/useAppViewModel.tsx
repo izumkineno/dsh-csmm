@@ -80,6 +80,7 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
           s.scope = { ...scope }
           s.detail = null
           s.selected = { prompt: null, skill: null, mcp: null }
+          s.catalog = { status: 'idle' }
           const gid = s.activeGroup[scopeKey(scope)]
           s.active = { kind: 'group', id: gid && s.groups.some((g) => g.id === gid && sameScope(g.scope, scope)) ? gid : null }
           if (scope.kind === 'workspace' && scope.id) {
@@ -132,6 +133,37 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
               s.dshPromptsState = 'error'
               s.dshPromptsError = err instanceof Error ? err.message : String(err)
             })
+          })
+      },
+      loadDshSkills() {
+        if (stateRef.current.catalog.status === 'loading') return
+        if (!host.listDshSkills) {
+          mutate((s) => {
+            s.catalog = { status: 'error', error: '宿主未提供技能目录接口' }
+          })
+          return
+        }
+        const scope = { ...stateRef.current.scope }
+        const key = scopeKey(scope)
+        mutate((s) => {
+          s.catalog = { status: 'loading', error: null }
+        })
+        void host
+          .listDshSkills(scope)
+          .then((result) => {
+            setState((prev) => (
+              scopeKey(prev.scope) === key
+                ? { ...prev, catalog: { status: 'ready', result, error: null } }
+                : prev
+            ))
+          })
+          .catch((err: unknown) => {
+            const message = err instanceof Error ? err.message : String(err)
+            setState((prev) => (
+              scopeKey(prev.scope) === key
+                ? { ...prev, catalog: { status: 'error', error: message } }
+                : prev
+            ))
           })
       },
       toggleDshPrompt(name, disabled) {

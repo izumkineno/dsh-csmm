@@ -1,9 +1,9 @@
 // 唯一的跨层耦合面：模型 / 视图模型 / 视图之间共享的全部类型与接口。
 // 任何一层新增对外能力，先在这里定义契约，再到各自实现里落地。
 
-import type { PromptSectionView, ScannedSkill, SkillScanResult, SkillScanRoot } from '../shared/types'
+import type { DshSkill, PromptSectionView, SkillCatalogResult } from '../shared/types'
 
-export type { PromptSectionView, ScannedSkill, SkillScanResult, SkillScanRoot }
+export type { DshSkill, PromptSectionView, SkillCatalogResult }
 
 // ---------- 作用域与标签 ----------
 export type ScopeKind = 'global' | 'workspace'
@@ -16,6 +16,16 @@ export interface Scope {
 export const SCOPE_LABEL: Record<ScopeKind, string> = {
   global: '全局',
   workspace: '工作区',
+}
+
+export const DSH_SOURCE_LABEL: Record<string, string> = {
+  'user-dsh': '用户级 DSH',
+  'user-agents': '用户级 agents',
+  'project-dsh': '项目 .dsh',
+  'project-agents': '项目 .agents',
+  bundled: 'DSH 内置',
+  runtime: '运行时注册',
+  custom: '插件注册',
 }
 
 export type PageTab = 'prompt' | 'skill' | 'mcp' | 'manage'
@@ -274,16 +284,12 @@ export interface GroupActivateModal {
   name?: string
 }
 
-export interface SkillScanModal {
-  type: 'skillScan'
-}
+export type ModalState = SkillAddModal | MigrateModal | ServerFormModal | RawModal | WorkspaceTrustModal | GroupActivateModal
 
-export type ModalState = SkillAddModal | MigrateModal | ServerFormModal | RawModal | WorkspaceTrustModal | GroupActivateModal | SkillScanModal
-
-/** 只读扫描 DSH 用户级 / 项目级技能目录的结果。 */
-export interface SkillScanState {
-  status: 'idle' | 'loading' | 'done' | 'error'
-  result?: SkillScanResult
+/** 宿主技能注册表的只读目录。 */
+export interface SkillCatalogState {
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  result?: SkillCatalogResult
   error?: string | null
 }
 
@@ -323,7 +329,7 @@ export interface AppState {
   customs: CustomPrompt[]
   skills: Skill[]
   servers: McpServer[]
-  scan: SkillScanState
+  catalog: SkillCatalogState
   skillSel: string[]
   q: { skill?: string; mcp?: string }
   showPlugin: boolean
@@ -376,8 +382,8 @@ export interface HostPort {
   send?(command: Record<string, unknown>, workspaceRoot?: string): Promise<void>
   /** 读取宿主当前注册并组装出的提示词段/运行上下文（只读）。 */
   listPrompts?(sessionId?: string, presetId?: string): Promise<PromptSectionView[]>
-  /** 只读扫描 DSH 已有技能目录；不导入、不写文件。 */
-  scanSkills?(scope?: Scope): Promise<SkillScanResult>
+  /** 只读读取 DSH 技能注册表；不导入、不写文件。 */
+  listDshSkills?(scope?: Scope): Promise<SkillCatalogResult>
 }
 
 // ---------- 派生数据 ----------
@@ -435,7 +441,13 @@ export interface Selectors {
   denyCountFor(state: AppState): number
   shadowCountFor(state: AppState): number
   filteredSkills(state: AppState): Skill[]
+  /** 宿主注册的 DSH 技能；排除已由本插件管理，并遵守插件开关。 */
+  visibleDshSkills(state: AppState): DshSkill[]
+  /** 在 visibleDshSkills 基础上按搜索词过滤。 */
+  filteredDshSkills(state: AppState): DshSkill[]
   filteredServers(state: AppState): McpServer[]
+  /** 按名字读取一条 DSH 技能，不受搜索与插件开关影响。 */
+  dshSkill(state: AppState, name: string): DshSkill | undefined
   /** 当前作用域链里可用的技能 / MCP 定义；工作区同名定义覆盖全局。 */
   resolvedSkill(state: AppState, name: string | null | undefined): Skill | undefined
   resolvedServer(state: AppState, name: string | null | undefined): McpServer | undefined
@@ -499,8 +511,8 @@ export interface Actions {
   moveSkill(name: string, target: 'global' | 'workspace'): void
   openSkillDir(): void
   addSkillsFromFiles(files: FileList | File[] | null, fromFolder: boolean): void
-  /** 打开只读扫描弹窗并扫描 DSH 用户级 / 项目级技能目录。 */
-  scanSkills(): void
+  /** 读取 DSH 技能注册表；扫描结果在技能页内联显示。 */
+  loadDshSkills(): void
   refreshServers(): void
   toggleTool(serverName: string, toolName: string, on: boolean): void
   setAllTools(serverName: string, on: boolean, names: string[]): void

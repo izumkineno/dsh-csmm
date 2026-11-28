@@ -12,7 +12,7 @@ export default function PageTabs() {
         const n = t.id === 'prompt'
           ? catalog.sections.length + catalog.contexts.length + catalog.tools.length + customCount
           : t.id === 'skill'
-            ? selectors.visibleSkills(state).length
+            ? selectors.visibleSkills(state).length + selectors.visibleDshSkills(state).length
             : t.id === 'mcp'
               ? selectors.visibleServers(state).length
               : groupCount

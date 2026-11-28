@@ -45,45 +45,28 @@ export interface SkillRecord {
   bundled?: boolean
 }
 
-/** One skill discovered on disk during a read-only DSH scan. */
-export interface ScannedSkill {
-  /** Directory name; this is what DSH uses as the skill id. */
+/** One skill registered in the DSH skill registry. */
+export interface DshSkill {
   name: string
-  /** Frontmatter name when present, otherwise the directory name. */
-  label: string
-  scope: 'global' | 'workspace'
-  wsId?: string
-  bytes: number
-  /** disable-model-invocation is inverted into this flag. */
+  description: string
+  whenToUse?: string
+  source: string
+  provider: string
+  path?: string
+  /** Whether the model may invoke the skill. */
   model: boolean
-  /** user-invocable, defaulting to true when absent. */
+  /** Whether the user may invoke the skill. */
   user: boolean
-  desc: string
-  whenToUse: string
-  /** Absolute skill directory. */
-  dir: string
-  /** Path relative to the scan root, using forward slashes. */
-  rel: string
-  /** File that was read: SKILL.md or SKILL.md.disabled. */
-  file: string
-  enabled: boolean
-  notes: string[]
+  /** Global registry layer, or a project layer of the requested workspace. */
+  origin: 'global' | 'workspace'
 }
 
-export interface SkillScanRoot {
-  scope: 'global' | 'workspace'
-  wsId?: string
-  path: string
-  exists: boolean
-  count: number
-}
-
-export interface SkillScanResult {
+/** Read-only view of the skills DSH itself has registered for a scope. */
+export interface SkillCatalogResult {
   scannedAt: string
-  roots: SkillScanRoot[]
-  skills: ScannedSkill[]
+  skills: DshSkill[]
   errors: string[]
-  /** The requested workspace was untrusted, so only the global root was scanned. */
+  /** The requested workspace is untrusted, so only the global layer was read. */
   restricted?: boolean
 }
 
@@ -280,7 +263,7 @@ export interface PromptSectionView {
 }
 
 export interface RpcRequest {
-  method: 'snapshot' | 'dispatch' | 'testConnection' | 'promptList' | 'skillScan'
+  method: 'snapshot' | 'dispatch' | 'testConnection' | 'promptList' | 'skillCatalog'
   scope?: Scope
   command?: Command
   server?: McpServerRecord

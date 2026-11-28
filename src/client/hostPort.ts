@@ -6,7 +6,7 @@ import type {
   PromptSectionView,
   RpcRequest,
   Scope,
-  SkillScanResult,
+  SkillCatalogResult,
   Snapshot,
 } from '../shared/types'
 
@@ -17,7 +17,7 @@ export interface RemoteHost extends HostPort {
   dispatch(command: Command): Promise<Snapshot>
   revision(): number
   listPrompts(sessionId?: string): Promise<PromptSectionView[]>
-  scanSkills(scope?: Scope): Promise<SkillScanResult>
+  listDshSkills(scope?: Scope): Promise<SkillCatalogResult>
 }
 
 export async function requestRpc(
@@ -26,7 +26,7 @@ export async function requestRpc(
   snapshot?: Snapshot
   outcome?: ConnectionOutcome
   prompts?: PromptSectionView[]
-  scan?: SkillScanResult
+  catalog?: SkillCatalogResult
 }> {
   const response = await fetch(ROUTE, {
     method: 'POST',
@@ -38,7 +38,7 @@ export async function requestRpc(
     snapshot?: Snapshot
     outcome?: ConnectionOutcome
     prompts?: PromptSectionView[]
-    scan?: SkillScanResult
+    catalog?: SkillCatalogResult
     error?: { code?: string; message?: string }
   }
   if (!response.ok || payload.ok === false) {
@@ -109,10 +109,10 @@ export function createRemoteHost(snapshot: Snapshot, workspaceRoot?: string): Re
       const result = await requestRpc({ method: 'promptList', sessionId, presetId, workspaceRoot: root })
       return result.prompts ?? []
     },
-    async scanSkills(scope?: Scope) {
-      const result = await requestRpc({ method: 'skillScan', scope, workspaceRoot: root })
-      if (!result.scan) throw new Error('scan missing from response')
-      return result.scan
+    async listDshSkills(scope?: Scope) {
+      const result = await requestRpc({ method: 'skillCatalog', scope, workspaceRoot: root })
+      if (!result.catalog) throw new Error('catalog missing from response')
+      return result.catalog
     },
   }
 }

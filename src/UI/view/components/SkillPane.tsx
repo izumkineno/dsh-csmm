@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Skill } from '../../contracts'
+import { DSH_SOURCE_LABEL, type Skill } from '../../contracts'
 import { useAppViewModel } from '../../viewmodel/useAppViewModel'
 import Markdown from './Markdown'
 import GroupStatus from './GroupStatus'
@@ -16,7 +16,34 @@ export default function SkillPane() {
   const [view, setView] = useState<'preview' | 'raw'>('preview')
   const skName = state.selected.skill?.kind === 'skill' ? state.selected.skill.name : null
   const sk = selectors.resolvedSkill(state, skName)
+  const dsh = skName ? selectors.dshSkill(state, skName) : undefined
   if (!sk) {
+    if (dsh) {
+      return (
+        <>
+          <div className="editor-head">
+            <div className="crumbs">
+              <span>{selectors.scopeCrumb(state.scope, state.meta)}</span><span className="sep">›</span><span>技能</span>
+            </div>
+            <div className="title-row"><strong>{dsh.name}</strong><span className="tag">DSH</span>
+              <span className="tag" title={dsh.origin === 'workspace' ? '当前工作区可见' : '全局可见'}>{dsh.origin === 'workspace' ? '工作区' : '全局'}</span>
+            </div>
+          </div>
+          <div className="editor-body" data-dsh-pane data-name={dsh.name}>
+            <dl className="meta-grid">
+              <dt>来源</dt><dd data-dsh-source={dsh.source}>{DSH_SOURCE_LABEL[dsh.source] ?? dsh.source}{dsh.provider ? ' · ' + dsh.provider : ''}</dd>
+              {dsh.path && <><dt>位置</dt><dd>{dsh.path}</dd></>}
+              <dt>作用域</dt><dd>{dsh.origin === 'workspace' ? '当前工作区可见' : '全局可见'}</dd>
+              <dt>调用策略</dt><dd>{dsh.model ? '模型可调用' : '仅用户可用'} · {dsh.user ? '用户可调用' : '不向用户暴露'}</dd>
+              <dt>说明</dt><dd>{dsh.description || '无描述'}</dd>
+              {dsh.whenToUse && <><dt>何时使用</dt><dd>{dsh.whenToUse}</dd></>}
+            </dl>
+            <div className="note" data-dsh-note>由 DSH 技能注册表提供，这里只读；停用或修改请在 DSH 侧进行。</div>
+          </div>
+          <div className="editor-foot"><span className="hint">DSH 技能来自当前作用域可见的注册表；顶部刷新按钮会重新读取。</span></div>
+        </>
+      )
+    }
     return (
       <>
         <div className="editor-head">

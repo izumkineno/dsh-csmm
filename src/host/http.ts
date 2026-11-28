@@ -36,9 +36,9 @@ export async function handleRpc(
       const prompts = deps.promptList ? await deps.promptList(request.sessionId, request.presetId) : []
       return { status: 200, body: { ok: true, prompts } }
     }
-    if (request.method === 'skillScan') {
+    if (request.method === 'skillCatalog') {
       const service = await deps.service(request.workspaceRoot)
-      return { status: 200, body: { ok: true, scan: service.scanSkills(request.scope) } }
+      return { status: 200, body: { ok: true, catalog: await service.listDshSkills(request.scope) } }
     }
     if (request.method === 'testConnection') {
       if (!request.server) return fail(400, 'E_PAYLOAD', 'server is required')

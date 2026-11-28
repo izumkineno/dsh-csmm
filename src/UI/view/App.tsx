@@ -46,6 +46,9 @@ export default function App() {
     if (state.dshPromptsState === 'idle') actions.loadDshPrompts()
   }, [state.dshPromptsState, actions])
   useEffect(() => {
+    if (state.tab === 'skill' && state.catalog.status === 'idle') actions.loadDshSkills()
+  }, [state.tab, state.catalog.status, actions])
+  useEffect(() => {
     mainRef.current?.focus()
   }, [state.detail, state.tab, state.active.kind, state.active.id])
   return (

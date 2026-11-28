@@ -14,7 +14,7 @@ DSH 插件：在「全局 / 工作区」两个作用域里管理提示词段、�
 - **配置集管理**：在「配置集与生效」页为每作用域建多个配置集，每层一个生效配置集；顶部下拉可直接切换，也支持继承下层、显式不使用（阻断继承）。编辑器按提示词段 / 工具 / MCP / 技能分栏，支持搜索与只看未包含。勾选只写草稿，点保存才提交；生效配置集的工具勾选就是白名单，一个都不勾选会拒绝所有工具。
 - **提示词目录**：插件自有段（`sections/**/*.md`）+ 宿主注册段（`DSH 注册提示词`）+ 运行上下文 + 工具定义统一列在「提示词」页；点击行在中栏看只读全文，行尾显示成员状态（已包含 / 未包含 / 另 N 个配置集），成员写入统一在「配置集与生效」页完成；运行上下文始终注入。
 - **自定义提示词**：跟随生效配置集所在作用域，可逐条启用/停用。
-- **技能**：作用域感知定义，工作区可覆盖全局；生效组的技能按 agent 注册进宿主（`source/provider: dsh-csmm`）。技能页支持只读扫描 DSH 技能目录（`<DSH_HOME>/skills` 与受信任工作区的 `<workspace>/.dsh/skills`），列出 frontmatter 摘要、启用状态与异常；扫描不导入、不写 DSH 文件。
+- **技能**：作用域感知定义，工作区可覆盖全局；生效组的技能按 agent 注册进宿主（`source/provider: dsh-csmm`）。技能页同时自动读取 DSH 技能注册表（`ctx.skills`）并内联列出全局可见与当前工作区可见的技能，显示来源、描述、调用策略与路径；顶部「刷新」重新读取注册表。DSH 技能只读，不导入、不写入 DSH 文件。
 - **MCP 服务器**：按作用域单独定义，工作区继承全局、同名覆盖；工具开关、连接测试（无探针时如实报错）、密钥与配置分离存储。
 - **陌生工作区信任**：未信任工作区进入受限模式，只加载全局配置；信任后才读取该工作区定义。
 - **上下文预览**：右侧显示当前生效内容，或正在编辑的配置集草稿（按未保存的成员预览）、诊断、token 预算（200K），以及复制生效内容。
@@ -49,13 +49,13 @@ $DSH_HOME/dsh-csmm/
 
 ```
 src/shared/   类型 + 作用域解析（resolve.ts：winningLayer/visible*/budget/tokenEstimate）
-src/host/     宿主：store ｜ service（snapshot/dispatch） ｜ http（RPC） ｜
+src/host/     宿主：store ｜ service（snapshot/dispatch/listDshSkills） ｜ http（RPC） ｜
               materialize（按 agent 注入/过滤） ｜ sections ｜ prompts ｜ paths
-src/client/   浏览器侧：hostPort.ts（RemoteHost：load/send/snapshot/dispatch/listPrompts/scanSkills）
+src/client/   浏览器侧：hostPort.ts（RemoteHost：load/send/snapshot/dispatch/listPrompts/listDshSkills）
 src/UI/       面板 MVVM（contracts ｜ model ｜ viewmodel ｜ view）
 ```
 
-- RPC：`POST /dsh-csmm/rpc`，`{ method: 'snapshot' | 'dispatch' | 'testConnection' | 'promptList' | 'skillScan' }`。
+- RPC：`POST /dsh-csmm/rpc`，`{ method: 'snapshot' | 'dispatch' | 'testConnection' | 'promptList' | 'skillCatalog' }`。
 - `snapshot(scope, workspaceRoot?)` 返回 `{ revision, bootstrap, diagnostics }`。
 - `dispatch` 是唯一写通道，共 19 条命令（`src/shared/types.ts` 的 `Command` 联合类型）：
   `group.save/activate/effective/inherit/none/delete`、`custom.save/toggle/delete`、
@@ -63,7 +63,7 @@ src/UI/       面板 MVVM（contracts ｜ model ｜ viewmodel ｜ view）
 - 每次 `dispatch` 成功后刷新 materialize；agent 级注册随 agent 释放。
 - `promptList(sessionId?, presetId?)`：有 live agent 按 agent 装配，否则按默认 preset 装配，
   返回 sections + contexts + tool schemas（`standard` 下约 144 项）。
-- `skillScan(scope, workspaceRoot?)`：只读扫描 `<DSH_HOME>/skills` 与受信任工作区的 `<workspace>/.dsh/skills`，返回 roots / skills / errors；未信任工作区只返回全局根并带 `restricted: true`。不写 store、不导入技能。
+- `skillCatalog(scope, workspaceRoot?)`：经宿主 `ctx.skills.list()` 读取当前作用域可见的技能；全局不带 `cwd`，受信任工作区带工作区根；未信任工作区回落全局并带 `restricted: true`。返回 `scannedAt / skills / errors`；不写 store、不导入技能。
 - 面板：提示词页的提示词段 / 工具定义 / 运行上下文行在中栏显示只读全文（读取 `promptList` 结果）；成员状态与写入集中在「配置集与生效」页，提示词页只显示状态与跳转；运行上下文始终注入且不参与配置集，同时计入预算与「生效内容」摘要。
 
 ## 安装与运行
@@ -81,7 +81,7 @@ src/UI/       面板 MVVM（contracts ｜ model ｜ viewmodel ｜ view）
 ```bash
 npm install
 npm run build        # 宿主 + 客户端打包到 dist/
-npm test             # tsx --test tests/shared + tests/host（当前 67 条）
+npm test             # tsx --test tests/shared + tests/host（当前 62 条）
 npm run preview:ui   # Vite 预览面板，经代理走真实宿主 RPC
 ```
 
@@ -91,7 +91,7 @@ npm run preview:ui   # Vite 预览面板，经代理走真实宿主 RPC
 
 ## 验证
 
-- 单测：`npm test`（store 原子写/锁/revision、service snapshot/dispatch/scanSkills、materialize 注入与过滤、resolve 作用域语义、技能 frontmatter 扫描）。
+- 单测：`npm test`（store 原子写/锁/revision、service snapshot/dispatch/listDshSkills、materialize 注入与过滤、resolve 作用域语义、技能注册表投影）。
 - 构建：`npm run build` 成功且 `node --check dist/index.js dist/client.js` 通过。
 - 真机：装到 `web` profile 后重启，新建会话，在会话日志的 system prompt 里核对 `dsh-csmm` 段与开关过滤效果。
 - 浏览器回归：见 [docs/BROWSER-TEST-MATRIX.md](docs/BROWSER-TEST-MATRIX.md)、[docs/TEST-CHECKLIST.md](docs/TEST-CHECKLIST.md)、[docs/BROWSER-TEST-SOP.md](docs/BROWSER-TEST-SOP.md)。
@@ -101,7 +101,7 @@ npm run preview:ui   # Vite 预览面板，经代理走真实宿主 RPC
 - 提示词开关只过滤 `sections`；工具 schema（约 107 项，含 MCP 工具）由工具注册表单独下发，不受段开关影响。工具白名单通过 `tools.restrict` 按生效配置集执行：勾选的才放行，空名单会拒绝所有工具；改动只对之后新建的 agent（新会话、子代理）生效。
 - MCP 服务器只做配置管理（增删改、工具开关、密钥分离），不做宿主启停与真实连接探测；`testConnection` 在无探针时返回明确错误。
 - `sections/` 为空且配置集无内容时，面板列表为空是正常状态（无内置演示数据）；`DSH 注册提示词` 列表仍可从宿主读取。
-- 技能扫描只读，且只覆盖 DSH 用户级与当前工作区两个根；不扫 bundled/profile 内置技能，也不导入或写回 DSH 技能目录。
+- DSH 技能目录只读，内容来自宿主 `ctx.skills`（含 bundled / 用户级 / 项目级等注册来源）；面板不导入、不启停、不写回 DSH 技能目录。未信任工作区只显示全局可见项。
 - `.dsh/` 已加入 `.gitignore`，工作区 store 不入库。
 
 ## 文档地图

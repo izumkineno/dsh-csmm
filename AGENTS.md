@@ -6,7 +6,7 @@ dsh-csmm 是 DSH 插件：在全局 / 工作区两个作用域里管理提示词
 
 ## 当前状态
 
-- 已有实现：侧边栏面板、双作用域 store、RPC 后端、按 agent 注入提示词与技能、按组过滤提示词段、DSH 技能目录只读扫描。
+- 已有实现：侧边栏面板、双作用域 store、RPC 后端、按 agent 注入提示词与技能、按组过滤提示词段、DSH 技能注册表只读目录。
 - [README.md](README.md) 是当前实现的权威说明（安装、存储、RPC、开发、限制）。
 - [SPEC.md](SPEC.md) 是早期规范草案，仅作设计参考，不再是实现契约。
 - [VSCODE-MAPPING.md](VSCODE-MAPPING.md) 只是概念类比，非规范。
@@ -16,7 +16,7 @@ dsh-csmm 是 DSH 插件：在全局 / 工作区两个作用域里管理提示词
 
 ```bash
 npm install
-npm test                 # tsx --test，当前 67 条
+npm test                 # tsx --test，当前 62 条
 npm run build            # 产出 dist/index.js + dist/client.js
 npm run preview:ui       # Vite 预览，经代理访问真实宿主 RPC
 npx tsc -p tsconfig.host.json --noEmit
@@ -30,7 +30,7 @@ npx tsc -p tsconfig.client.json --noEmit
 
 ```
 src/shared/   类型与作用域解析
-src/host/     宿主：store / service / http RPC / materialize / prompts / sections / skillScan
+src/host/     宿主：store / service / http RPC / materialize / prompts / sections
 src/client/   浏览器侧 HostPort 与面板挂载
 src/UI/       面板 MVVM（contracts / model / viewmodel / view）
 tests/        shared + host 单测

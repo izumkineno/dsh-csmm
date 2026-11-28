@@ -5,12 +5,12 @@ import { createRpcHandler } from './http'
 import { registerAgentPromptFilter, registerAgentPrompts, registerAgentSkills, registerAgentTools, type AgentLike, type WorkspaceRegistryLike } from './materialize'
 import { globalPaths, workspacePaths, type ScopePaths } from './paths'
 import { loadSections } from './sections'
-import { CsmmService, type WorkspaceBinding } from './service'
+import { CsmmService, type SkillRegistryLike, type WorkspaceBinding } from './service'
 import { loadStore } from './store'
 import { listRegisteredPrompts, type SystemPromptAssembler } from './prompts'
 
 export const name = 'dsh-csmm'
-export const inject: string[] = ['webServer', 'workspaceRegistry', 'sessions', 'systemPrompt']
+export const inject: string[] = ['webServer', 'workspaceRegistry', 'sessions', 'systemPrompt', 'skills']
 
 export const RPC_ROUTE = '/dsh-csmm/rpc'
 
@@ -218,9 +218,9 @@ async function openService(ctx: HostContext, workspaceRoot?: string): Promise<Cs
 
   return new CsmmService({
     global,
-    home,
     workspace,
     workspaces,
+    registry: lookup<SkillRegistryLike>(ctx, 'skills'),
     ...(workspaceRoot ? { workspaceRoot } : {}),
     sections: loadSections(home),
     contextWindow: () => lastContextWindow(ctx, workspaceRoot),

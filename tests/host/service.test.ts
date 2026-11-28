@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
 import { scopePaths } from '../../src/host/paths'
-import { CsmmService, ServiceError } from '../../src/host/service'
+import { CsmmService, ServiceError, type DshSkillSummary, type SkillRegistryLike } from '../../src/host/service'
 import { loadSecrets } from '../../src/host/store'
 import type { Command, McpServerRecord, SectionRecord, SkillRecord } from '../../src/shared/types'
 
@@ -14,15 +14,16 @@ const sections: SectionRecord[] = [
   { name: 'working-directory:current', source: 'runtime', tokens: 5, kind: 'context', text: 'cwd' },
 ]
 
-function makeService(trusted = false, extra: { contextWindow?: () => number | undefined } = {}) {
+function makeService(
+  trusted = false,
+  extra: { contextWindow?: () => number | undefined; registry?: SkillRegistryLike } = {},
+) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-csmm-svc-'))
   const global = scopePaths(path.join(root, 'global'))
-  const home = path.join(root, 'home')
   const workspaceRoot = path.join(root, 'repo')
   const workspace = { id: wsId, paths: scopePaths(path.join(root, 'ws', wsId)) }
   const service = new CsmmService({
     global,
-    home,
     workspace,
     workspaces: [{ id: wsId, title: 'repo', path: workspaceRoot, trusted }],
     workspaceRoot,
@@ -33,7 +34,7 @@ function makeService(trusted = false, extra: { contextWindow?: () => number | un
     // seed trust through the public command path
     fs.mkdirSync(global.root, { recursive: true })
   }
-  return { service, global, workspace, root, home, workspaceRoot }
+  return { service, global, workspace, root, workspaceRoot }
 }
 
 const group = {
@@ -328,42 +329,79 @@ test('snapshot exposes the context window from the host provider', () => {
   assert.equal(service.snapshot({ kind: 'global' }).bootstrap.contextWindow, 1_000_000)
 })
 
-function writeSkill(root: string, name: string, file: string, text: string): void {
-  const dir = path.join(root, name)
-  fs.mkdirSync(dir, { recursive: true })
-  fs.writeFileSync(path.join(dir, file), text)
+const registrySkills: DshSkillSummary[] = [
+  {
+    name: 'global-one',
+    description: '全局技能',
+    whenToUse: '需要全局能力时',
+    source: 'user-dsh',
+    provider: 'filesystem',
+    path: '/skills/global-one/SKILL.md',
+    invocation: { modelInvocable: true, userInvocable: true },
+  },
+  {
+    name: 'ws-one',
+    description: '项目技能',
+    source: 'project-dsh',
+    provider: 'filesystem',
+    invocation: { modelInvocable: false, userInvocable: true },
+  },
+]
+
+function fakeRegistry(calls: Array<{ cwd?: string }>): SkillRegistryLike {
+  return {
+    list: async (options) => {
+      calls.push(options)
+      return options.cwd ? registrySkills : registrySkills.filter((s) => !s.source.startsWith('project-'))
+    },
+  }
 }
 
-test('scanSkills scans global skills and only adds project skills when trusted', () => {
-  const { service, home, workspaceRoot } = makeService()
-  writeSkill(path.join(home, 'skills'), 'global-one', 'SKILL.md',
-    '---\nname: global-one\ndescription: 全局技能\n---\nbody')
-  writeSkill(path.join(workspaceRoot, '.dsh', 'skills'), 'ws-one', 'SKILL.md',
-    '---\nname: ws-one\ndescription: 项目技能\n---\nbody')
+test('listDshSkills reads the registry and passes cwd only for a trusted workspace', async () => {
+  const calls: Array<{ cwd?: string }> = []
+  const { service, workspaceRoot } = makeService(false, { registry: fakeRegistry(calls) })
 
-  const untrusted = service.scanSkills({ kind: 'workspace', id: wsId })
+  const untrusted = await service.listDshSkills({ kind: 'workspace', id: wsId })
   assert.deepEqual(untrusted.skills.map((s) => s.name), ['global-one'])
-  assert.equal(untrusted.roots.length, 1)
   assert.equal(untrusted.restricted, true)
+  assert.deepEqual(calls[0], {})
 
   service.dispatch({ type: 'trust.set', workspaceId: wsId, trusted: true })
-  const trusted = service.scanSkills({ kind: 'workspace', id: wsId })
+  const trusted = await service.listDshSkills({ kind: 'workspace', id: wsId })
   assert.deepEqual(trusted.skills.map((s) => s.name), ['global-one', 'ws-one'])
-  assert.deepEqual(trusted.roots.map((r) => r.scope), ['global', 'workspace'])
   assert.equal(trusted.restricted, undefined)
+  assert.deepEqual(calls[1], { cwd: workspaceRoot })
 
-  const globalOnly = service.scanSkills()
+  const projected = trusted.skills[1]
+  assert.equal(projected.description, '项目技能')
+  assert.equal(projected.origin, 'workspace')
+  assert.equal(projected.model, false)
+  assert.equal(projected.user, true)
+  assert.equal(projected.path, undefined)
+
+  const withExtras = trusted.skills[0]
+  assert.equal(withExtras.origin, 'global')
+  assert.equal(withExtras.whenToUse, '需要全局能力时')
+  assert.equal(withExtras.path, '/skills/global-one/SKILL.md')
+
+  const globalOnly = await service.listDshSkills()
   assert.deepEqual(globalOnly.skills.map((s) => s.name), ['global-one'])
+  assert.deepEqual(calls[2], {})
 })
 
-test('scanSkills is read-only and tolerates missing roots', () => {
-  const { service, global, home } = makeService()
+test('listDshSkills is read-only and reports a missing registry without writing', async () => {
+  const { service, global } = makeService()
   const before = fs.existsSync(global.store)
-  const scan = service.scanSkills()
+  const catalog = await service.listDshSkills()
   assert.equal(before, fs.existsSync(global.store))
-  assert.equal(scan.roots.length, 1)
-  assert.equal(scan.roots[0].exists, false)
-  assert.deepEqual(scan.skills, [])
-  assert.deepEqual(scan.errors, [])
-  assert.equal(fs.existsSync(path.join(home, 'skills')), false)
+  assert.deepEqual(catalog.skills, [])
+  assert.deepEqual(catalog.errors, ['宿主未提供技能注册表'])
+
+  const failing = new CsmmService({
+    global,
+    registry: { list: async () => { throw new Error('registry down') } },
+  })
+  const failed = await failing.listDshSkills()
+  assert.deepEqual(failed.skills, [])
+  assert.deepEqual(failed.errors, ['读取 DSH 技能失败：registry down'])
 })

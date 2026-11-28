@@ -244,7 +244,7 @@ curl -s -X POST "$GUI_ORIGIN/dsh-csmm/rpc" -H 'content-type: application/json' \
 | SKL-19 | SKILL.md 原文精确 | 选中 `Alpha` | 点 `原文` | `[DOM]` `pre.md-raw[data-skillraw]` 文本与 store `skill.text` 经 `skillFile()` 拼接一致（含 frontmatter）；只读、无保存按钮 | P0 | 原文由 `skillFile()` 生成，不是磁盘字节 |
 | SKL-20 | 打开目录 | 选中 `Alpha` | 点 `打开目录` | `[TOAST]` 出现 `copy.skillDir` 文案（全局/工作区路径）；`[REV]` 不变；`[DISK]` 无变化 | P2 | 无宿主副作用，仅提示 |
 | SKL-21 | 批量选择与迁移预选 | 全局技能页 | 勾选 2 个技能 → 点批量 `复制` | `[DOM]` 底部 `已选 2`；迁移弹窗中这 2 个已勾选；`清空` 清空选择 | P2 | 无 |
-| SKL-23 | 只读扫描 DSH 技能目录 | 临时 `DSH_HOME/skills/scan-one/SKILL.md`（含 name/description）与 `DSH_HOME/skills/scan-off/SKILL.md.disabled`；工作区 `.dsh/skills/ws-one/SKILL.md`；工作区已信任 | 全局技能页点 `[data-sktool=scan]`；关闭弹窗；切到已信任工作区技能页再点 `[data-sktool=scan]`；看弹窗；点 `[data-skscan=rescan]` | `[DOM]` 标题 `扫描 DSH 技能`；全局作用域只有 `[data-skscan-root=global]`（`<DSH_HOME>/skills`，含 `scan-one`/`scan-off`）；工作区作用域有 global 与 `[data-skscan-root=workspace]`（`<workspace>/.dsh/skills`），`scan-one`/`ws-one` 行存在；`scan-off` 行带 `.disabled` 与 `已禁用`；重新扫描后仍列出；`[REV]`/`[DISK]` 不变 | P1 | 只读：不导入、不写 DSH 技能目录，也不进入 store；不扫 bundled/profile 根；未信任工作区只返回 global root 并显示范围提示 |
+| SKL-23 | DSH 技能注册表内联目录（只读） | DSH 全局至少注册 1 个技能；受信任工作区注册 1 个项目技能；另有未信任工作区 | 打开技能页（应自动加载，无需点扫描）；看「DSH 技能」段 `[data-dshitem]`；点顶部 `[data-sktool=refresh]`；点一个 DSH 技能行；切到未信任工作区技能页 | `[DOM]` 技能页出现「DSH 技能」段；行显示 name/description/来源 label/provider，无 checkbox；刷新按钮在加载中显示「刷新中…」；点行后 `[data-dsh-pane]` 显示来源、作用域、调用策略、说明与路径，且没有启停/复制/删除按钮；未信任工作区只显示全局项并出现 `[data-dsh-restricted]`；`[REV]`/`[DISK]` 不变 | P1 | 只读：数据来自宿主 `ctx.skills`，不导入、不启停、不写 DSH 技能目录，也不进入 store；工作区项目技能依赖 `cwd`，未信任时不读取；不展示 SKILL.md 正文 |
 
 ### 3.6 MCP 服务器（MCP）
 

@@ -4,6 +4,7 @@ import type {
   BudgetBreakdown,
   CoveredLayers,
   CustomPrompt,
+  DshSkill,
   EffectiveItems,
   Group,
   GroupItem,
@@ -311,6 +312,28 @@ export const filteredSkills = (state: AppState): Skill[] => {
   return base.filter((s) => (s.name + ' ' + s.label + ' ' + s.desc).toLowerCase().indexOf(query) >= 0)
 }
 
+export const visibleDshSkills = (state: AppState): DshSkill[] => {
+  const managed = new Set(visibleSkills(state).map((skill) => skill.name))
+  return (state.catalog.result?.skills ?? []).filter((skill) => {
+    if (managed.has(skill.name)) return false
+    if (state.showPlugin === false && skill.source === 'bundled') return false
+    return true
+  })
+}
+
+export const filteredDshSkills = (state: AppState): DshSkill[] => {
+  const base = visibleDshSkills(state)
+  const query = (state.q.skill || '').trim().toLowerCase()
+  if (!query) return base
+  return base.filter((skill) => {
+    const haystack = (skill.name + ' ' + skill.description + ' ' + (skill.whenToUse || '') + ' ' + skill.source + ' ' + skill.provider).toLowerCase()
+    return haystack.indexOf(query) >= 0
+  })
+}
+
+export const dshSkill = (state: AppState, name: string): DshSkill | undefined =>
+  state.catalog.result?.skills.find((skill) => skill.name === name)
+
 export const filteredServers = (state: AppState): McpServer[] => {
   const base = visibleServers(state)
   const query = (state.q.mcp || '').trim().toLowerCase()
@@ -419,6 +442,9 @@ export const selectors: Selectors = {
   denyCountFor,
   shadowCountFor,
   filteredSkills,
+  visibleDshSkills,
+  filteredDshSkills,
+  dshSkill,
   filteredServers,
   resolvedSkill,
   resolvedServer,

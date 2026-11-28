@@ -1,19 +1,17 @@
-import path from 'node:path'
 import type {
   Bootstrap,
   Command,
   CustomPromptRecord,
   Diagnostic,
+  DshSkill,
   GroupRecord,
   McpServerRecord,
   Scope,
-  ScannedSkill,
   SectionRecord,
   SecretsDocument,
   ServerSecretsPatch,
+  SkillCatalogResult,
   SkillRecord,
-  SkillScanResult,
-  SkillScanRoot,
   Snapshot,
   StoreDocument,
   WorkspaceRecord,
@@ -30,7 +28,6 @@ import {
   visibleSkills,
 } from '../shared/resolve'
 import type { ScopePaths } from './paths'
-import { scanSkillRoot } from './skillScan'
 import { loadSecrets, loadStore, saveSecrets, saveStore, withLock } from './store'
 
 export class ServiceError extends Error {
@@ -48,14 +45,29 @@ export interface WorkspaceBinding {
   paths: ScopePaths
 }
 
+/** The slice of DSH's skill registry the catalog needs. */
+export interface DshSkillSummary {
+  name: string
+  description: string
+  whenToUse?: string
+  source: string
+  provider: string
+  path?: string
+  invocation: { modelInvocable: boolean; userInvocable: boolean }
+}
+
+export interface SkillRegistryLike {
+  list(options: { cwd?: string }): Promise<DshSkillSummary[]>
+}
+
 export interface ServiceOptions {
   global: ScopePaths
   workspace?: WorkspaceBinding
   workspaces?: WorkspaceRecord[]
   sections?: SectionRecord[]
-  /** DSH home; scanSkills reads `<home>/skills` when no explicit home is given. */
-  home?: string
-  /** Current workspace root; scanSkills reads `<root>/.dsh/skills` when trusted. */
+  /** DSH's live skill registry; the catalog reads it instead of walking directories. */
+  registry?: SkillRegistryLike
+  /** Current workspace root; used when the requested workspace has no registry path. */
   workspaceRoot?: string
   /** Context window of the model used by the last conversation in this scope. */
   contextWindow?: () => number | undefined
@@ -79,47 +91,60 @@ export class CsmmService {
   }
 
   /**
-   * Read-only scan of the DSH skill roots. The requested workspace is only
-   * scanned when it is trusted; otherwise the result is restricted to global.
+   * Read-only list of the skills DSH has registered for the requested scope.
+   * An untrusted workspace falls back to the global layer, like the rest of the
+   * service; no store or DSH file is written.
    */
-  scanSkills(scope: Scope = { kind: 'global' }): SkillScanResult {
+  async listDshSkills(scope: Scope = { kind: 'global' }): Promise<SkillCatalogResult> {
     const state = this.loadMerged()
     const requested = this.requestedScope(scope)
     const target = this.resolveScope(requested, state)
-    const roots: SkillScanRoot[] = []
-    const skills: ScannedSkill[] = []
-    const errors: string[] = []
+    const restricted = requested.kind === 'workspace' && target.kind === 'global'
+    const scannedAt = new Date().toISOString()
+    const base = { scannedAt, skills: [] as DshSkill[], errors: [] as string[] }
+    const registry = this.options.registry
+    if (!registry) {
+      return { ...base, errors: ['宿主未提供技能注册表'], ...(restricted ? { restricted: true } : {}) }
+    }
 
-    const home = this.options.home ?? path.dirname(this.options.global.root)
-    const globalScan = scanSkillRoot({ root: path.join(home, 'skills'), scope: 'global' })
-    roots.push(globalScan.root)
-    skills.push(...globalScan.skills)
-    errors.push(...globalScan.errors)
-
+    let cwd: string | undefined
     if (target.kind === 'workspace') {
-      const workspaceRoot = this.options.workspaces?.find((w) => w.id === target.id)?.path
+      cwd = this.options.workspaces?.find((w) => w.id === target.id)?.path
         ?? this.options.workspaceRoot
-      if (workspaceRoot) {
-        const workspaceScan = scanSkillRoot({
-          root: path.join(workspaceRoot, '.dsh', 'skills'),
-          scope: 'workspace',
-          ...(target.id ? { wsId: target.id } : {}),
-        })
-        roots.push(workspaceScan.root)
-        skills.push(...workspaceScan.skills)
-        errors.push(...workspaceScan.errors)
-      } else {
-        errors.push('工作区根路径不可用，未扫描项目技能')
+      if (!cwd) {
+        return {
+          ...base,
+          errors: ['工作区根路径不可用，未读取项目技能'],
+          ...(restricted ? { restricted: true } : {}),
+        }
       }
     }
 
-    const restricted = requested.kind === 'workspace' && target.kind === 'global'
-    return {
-      scannedAt: new Date().toISOString(),
-      roots,
-      skills,
-      errors,
-      ...(restricted ? { restricted: true } : {}),
+    try {
+      const summaries = await registry.list(cwd ? { cwd } : {})
+      const skills = summaries.map((summary) => {
+        const skill: DshSkill = {
+          name: summary.name,
+          description: summary.description,
+          source: summary.source,
+          provider: summary.provider,
+          model: summary.invocation.modelInvocable,
+          user: summary.invocation.userInvocable,
+          origin: summary.source.startsWith('project-') ? 'workspace' : 'global',
+        }
+        if (summary.whenToUse) skill.whenToUse = summary.whenToUse
+        if (summary.path) skill.path = summary.path
+        return skill
+      })
+      return { scannedAt, skills, errors: [], ...(restricted ? { restricted: true } : {}) }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return {
+        scannedAt,
+        skills: [],
+        errors: ['读取 DSH 技能失败：' + message],
+        ...(restricted ? { restricted: true } : {}),
+      }
     }
   }
 

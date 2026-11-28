@@ -1,4 +1,5 @@
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { DSH_SOURCE_LABEL } from '../../contracts'
 import { useAppViewModel } from '../../viewmodel/useAppViewModel'
 import ActiveGroupBar from './ActiveGroupBar'
 import GroupStatus from './GroupStatus'
@@ -12,7 +13,10 @@ function ScopeTag({ scope }: { scope: 'global' | 'workspace' }) {
 function SkillList() {
   const { state, actions, selectors } = useAppViewModel()
   const list = selectors.filteredSkills(state)
+  const dsh = selectors.filteredDshSkills(state)
   const selected = state.selected.skill?.kind === 'skill' ? state.selected.skill.name : null
+  const catalog = state.catalog
+  const open = (name: string) => actions.selectResource({ kind: 'skill', name })
   return (
     <>
       <div className="list-actions">
@@ -23,13 +27,14 @@ function SkillList() {
         <button className="btn small" data-sktool="add" onClick={() => actions.openSkillAdd()}>+ 添加</button>
         <button className="btn small" data-sktool="migrate" onClick={() => actions.openMigrate(state.skillSel)}>复制到…</button>
         <button className="btn small" data-sktool="folder" onClick={() => actions.openSkillDir()}>目录</button>
-        <button className="btn small" data-sktool="scan" disabled={state.scan.status === 'loading'}
-          title="只读扫描 DSH 用户级与当前工作区的技能目录" onClick={() => actions.scanSkills()}>
-          {state.scan.status === 'loading' ? '扫描中…' : '扫描 DSH'}
+        <button className="btn small" data-sktool="refresh" disabled={catalog.status === 'loading'}
+          title="刷新 DSH 技能注册表（只读）" onClick={() => actions.loadDshSkills()}>
+          {catalog.status === 'loading' ? '刷新中…' : '刷新'}
         </button>
       </div>
       <div className="scroll">
-        {list.length === 0 && <div className="sub-empty">没有匹配的技能</div>}
+        <div className="rail-sec">本插件技能 <span className="count">{list.length}</span></div>
+        {list.length === 0 && <div className="sub-empty">没有匹配的本插件技能</div>}
         {list.map((sk) => {
           const active = selected === sk.name
           const checked = state.skillSel.indexOf(sk.name) >= 0
@@ -37,10 +42,10 @@ function SkillList() {
           return (
             <div key={sk.name} className={'item-row' + (active ? ' active' : '')}
               data-skillitem data-name={sk.name} role="button" tabIndex={0} aria-pressed={active}
-              aria-label={'查看技能 ' + sk.label} onClick={() => actions.selectResource({ kind: 'skill', name: sk.name })}
+              aria-label={'查看技能 ' + sk.label} onClick={() => open(sk.name)}
               onKeyDown={(e: ReactKeyboardEvent<HTMLDivElement>) => {
                 if (e.target !== e.currentTarget) return
-                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); actions.selectResource({ kind: 'skill', name: sk.name }) }
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(sk.name) }
               }}>
               <input type="checkbox" className="skill-check" data-skcheck checked={checked}
                 aria-label={'选择 ' + sk.name} onClick={(e) => e.stopPropagation()}
@@ -52,6 +57,33 @@ function SkillList() {
                 {sk.bundled && <span className="tag">插件</span>}
                 <ScopeTag scope={sk.scope} />
                 <GroupStatus kind="skill" name={sk.name} />
+              </span>
+            </div>
+          )
+        })}
+
+        <div className="rail-sec">DSH 技能 <span className="count">{dsh.length}</span></div>
+        {catalog.status === 'loading' && <div className="sub-empty">正在读取 DSH 技能注册表…</div>}
+        {catalog.status === 'error' && <div className="sub-empty">DSH 技能读取失败：{catalog.error || '未知错误'}</div>}
+        {catalog.result?.restricted && <div className="note" data-dsh-restricted>当前工作区未受信任，只显示全局 DSH 技能。</div>}
+        {catalog.status === 'ready' && dsh.length === 0 && <div className="sub-empty">没有匹配的 DSH 技能</div>}
+        {dsh.map((sk) => {
+          const active = selected === sk.name
+          return (
+            <div key={'dsh:' + sk.name} className={'item-row' + (active ? ' active' : '')}
+              data-dshitem data-name={sk.name} role="button" tabIndex={0} aria-pressed={active}
+              aria-label={'查看 DSH 技能 ' + sk.name} onClick={() => open(sk.name)}
+              onKeyDown={(e: ReactKeyboardEvent<HTMLDivElement>) => {
+                if (e.target !== e.currentTarget) return
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(sk.name) }
+              }}>
+              <span className="dot on"></span>
+              <span className="i-main"><span className="i-name">{sk.name}</span>
+                <span className="i-meta">{sk.description || '无描述'} · {DSH_SOURCE_LABEL[sk.source] ?? sk.source}{sk.provider ? ' · ' + sk.provider : ''}</span></span>
+              <span className="i-tail">
+                <span className="tag">DSH</span>
+                {sk.origin === 'workspace' && <span className="tag">工作区</span>}
+                {!sk.model && <span className="tag" title="模型不可调用">仅用户</span>}
               </span>
             </div>
           )
@@ -122,7 +154,7 @@ export default function ItemList() {
   const count = state.tab === 'prompt'
     ? catalog.sections.length + catalog.contexts.length + catalog.tools.length + selectors.customsOf(state.customs, state.scope, state.meta).length
     : state.tab === 'skill'
-      ? selectors.visibleSkills(state).length
+      ? selectors.visibleSkills(state).length + selectors.visibleDshSkills(state).length
       : state.tab === 'mcp'
         ? selectors.visibleServers(state).length
         : selectors.groupsOf(state.groups, state.scope, state.meta).length

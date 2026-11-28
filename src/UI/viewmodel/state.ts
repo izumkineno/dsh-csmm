@@ -15,7 +15,7 @@ export function makeInitialState(bootstrap: Bootstrap): AppState {
     customs: bootstrap.customs,
     skills: bootstrap.skills,
     servers: bootstrap.servers,
-    scan: { status: 'idle' },
+    catalog: { status: 'idle' },
     skillSel: [],
     q: {},
     showPlugin: true,
@@ -70,15 +70,14 @@ export function cloneState(prev: AppState): AppState {
     customs: prev.customs.map((c) => ({ ...c, scope: { ...c.scope } })),
     skills: prev.skills.map((s) => ({ ...s })),
     servers: prev.servers.map((s) => ({ ...s, tools: s.tools.map((t) => ({ ...t })) })),
-    scan: {
-      ...prev.scan,
-      ...(prev.scan.result
+    catalog: {
+      ...prev.catalog,
+      ...(prev.catalog.result
         ? {
             result: {
-              ...prev.scan.result,
-              roots: prev.scan.result.roots.map((r) => ({ ...r })),
-              skills: prev.scan.result.skills.map((s) => ({ ...s, notes: [...s.notes] })),
-              errors: [...prev.scan.result.errors],
+              ...prev.catalog.result,
+              skills: prev.catalog.result.skills.map((s) => ({ ...s })),
+              errors: [...prev.catalog.result.errors],
             },
           }
         : {}),
