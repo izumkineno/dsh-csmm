@@ -109,7 +109,9 @@ function SkillList() {
                     {sk.origin === 'workspace' && <span className="tag">工作区</span>}
                     {sk.model && !sk.user && <span className="tag" title="不向用户暴露">仅模型</span>}
                     {!sk.model && sk.user && <span className="tag" title="模型不可调用">仅用户</span>}
-                    {!sk.model && !sk.user && <span className="tag" title="模型与用户均不可调用">不可调用</span>}
+                    {!sk.model && !sk.user && (
+                      <span className="info-icon" role="img" title="模型不会自动调用，需要用户手动打开使用" aria-label="模型不会自动调用，需要手动使用">i</span>
+                    )}
                   </span>
                 </ResourceRow>
               )
