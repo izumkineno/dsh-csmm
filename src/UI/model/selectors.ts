@@ -1,10 +1,12 @@
 // 纯派生数据层：只读 state，不产生副作用，也不接触任何 Mock 内容。
+import { DSH_SOURCE_LABEL } from '../contracts'
 import type {
   AppState,
   BudgetBreakdown,
   CoveredLayers,
   CustomPrompt,
   DshSkill,
+  DshSkillGroup,
   EffectiveItems,
   Group,
   GroupItem,
@@ -331,6 +333,28 @@ export const filteredDshSkills = (state: AppState): DshSkill[] => {
   })
 }
 
+/** DSH 技能的来源标签：具体 source（如 oh-my-dsh）优先，通用 source 回退 provider，最后回退标签。 */
+export const dshSkillOrigin = (skill: DshSkill): string => {
+  const source = skill.source.trim()
+  if (source && !(source in DSH_SOURCE_LABEL)) return source
+  return skill.provider.trim() || DSH_SOURCE_LABEL[source] || source || '未知来源'
+}
+
+/** 按来源把 DSH 技能分组，组名使用可读来源标签。 */
+export const groupDshSkills = (skills: DshSkill[]): DshSkillGroup[] => {
+  const groups = new Map<string, DshSkillGroup>()
+  for (const skill of skills) {
+    const label = dshSkillOrigin(skill)
+    const group = groups.get(label)
+    if (group) group.skills.push(skill)
+    else groups.set(label, { key: label, label, skills: [skill] })
+  }
+  return [...groups.values()].sort((a, b) => a.label.localeCompare(b.label, 'zh-Hans-CN'))
+}
+
+/** 技能页可见的 DSH 技能，按来源分组。 */
+export const dshSkillGroups = (state: AppState): DshSkillGroup[] => groupDshSkills(filteredDshSkills(state))
+
 export const dshSkill = (state: AppState, name: string): DshSkill | undefined =>
   state.catalog.result?.skills.find((skill) => skill.name === name)
 
@@ -444,6 +468,8 @@ export const selectors: Selectors = {
   filteredSkills,
   visibleDshSkills,
   filteredDshSkills,
+  groupDshSkills,
+  dshSkillGroups,
   dshSkill,
   filteredServers,
   resolvedSkill,

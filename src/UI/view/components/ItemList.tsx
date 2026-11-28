@@ -1,10 +1,9 @@
-import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { DSH_SOURCE_LABEL } from '../../contracts'
 import { useAppViewModel } from '../../viewmodel/useAppViewModel'
 import ActiveGroupBar from './ActiveGroupBar'
 import GroupStatus from './GroupStatus'
 import ManageList from './ManageList'
 import PromptList from './PromptList'
+import { ResourceGroup, ResourceList, ResourceRow, useResourceGroups } from './ResourceList'
 
 function ScopeTag({ scope }: { scope: 'global' | 'workspace' }) {
   return <span className="tag" title={scope === 'global' ? '定义在全局' : '定义在当前工作区'}>{scope === 'global' ? '全局' : '工作区'}</span>
@@ -14,39 +13,61 @@ function SkillList() {
   const { state, actions, selectors } = useAppViewModel()
   const list = selectors.filteredSkills(state)
   const dsh = selectors.filteredDshSkills(state)
+  const dshGroups = selectors.dshSkillGroups(state)
   const selected = state.selected.skill?.kind === 'skill' ? state.selected.skill.name : null
   const catalog = state.catalog
   const open = (name: string) => actions.selectResource({ kind: 'skill', name })
+  const { isOpen, toggle } = useResourceGroups('skill')
+  const searching = (state.q.skill || '').trim().length > 0
+  const groupOpen = (id: string) => isOpen(id, searching)
+
   return (
-    <>
-      <div className="list-actions">
-        <input id="skillSearch" className="search" title="在当前作用域可见的全部技能中搜索，跨切换标签保留" placeholder="搜索技能…" value={state.q.skill || ''}
-          onChange={(e) => actions.setQuery('skill', e.target.value)} />
-      </div>
-      <div className="list-actions row2">
-        <button className="btn small" data-sktool="add" onClick={() => actions.openSkillAdd()}>+ 添加</button>
-        <button className="btn small" data-sktool="migrate" onClick={() => actions.openMigrate(state.skillSel)}>复制到…</button>
-        <button className="btn small" data-sktool="folder" onClick={() => actions.openSkillDir()}>目录</button>
-        <button className="btn small" data-sktool="refresh" disabled={catalog.status === 'loading'}
-          title="刷新 DSH 技能注册表（只读）" onClick={() => actions.loadDshSkills()}>
-          {catalog.status === 'loading' ? '刷新中…' : '刷新'}
-        </button>
-      </div>
-      <div className="scroll">
-        <div className="rail-sec">本插件技能 <span className="count">{list.length}</span></div>
-        {list.length === 0 && <div className="sub-empty">没有匹配的本插件技能</div>}
+    <ResourceList
+      search={{
+        id: 'skillSearch',
+        value: state.q.skill || '',
+        onChange: (value) => actions.setQuery('skill', value),
+        placeholder: '搜索技能…',
+        title: '在当前作用域可见的全部技能中搜索，跨切换标签保留',
+        ariaLabel: '搜索技能',
+      }}
+      actions={
+        <>
+          <button className="btn small" data-sktool="add" onClick={() => actions.openSkillAdd()}>+ 添加</button>
+          <button className="btn small" data-sktool="migrate" onClick={() => actions.openMigrate(state.skillSel)}>复制到…</button>
+          <button className="btn small" data-sktool="folder" onClick={() => actions.openSkillDir()}>目录</button>
+          <button className="btn small" data-sktool="refresh" disabled={catalog.status === 'loading'}
+            title="刷新 DSH 技能注册表（只读）" onClick={() => actions.loadDshSkills()}>
+            {catalog.status === 'loading' ? '刷新中…' : '刷新'}
+          </button>
+        </>
+      }
+      footer={
+        <>
+          {state.skillSel.length > 0 && (
+            <div className="bulk-bar on">
+              <span>已选 {state.skillSel.length}</span>
+              <button className="btn tiny" data-skbulk="migrate" onClick={() => actions.openMigrate(state.skillSel)}>复制</button>
+              <button className="btn tiny" data-skbulk="clear" onClick={() => actions.setSkillSel([])}>清空</button>
+            </div>
+          )}
+          <label className="toggle-line"><input id="pluginToggle" type="checkbox" checked={state.showPlugin !== false}
+            onChange={(e) => actions.setShowPlugin(e.target.checked)} /> 显示插件自带技能</label>
+        </>
+      }
+    >
+      <ResourceGroup groupId="skill:plugin" title="本插件技能" count={list.length}
+        open={groupOpen('skill:plugin')} onToggle={() => toggle('skill:plugin')}
+        empty={list.length === 0 ? <div className="sub-empty">{searching ? '没有匹配的本插件技能' : '还没有本插件技能'}</div> : null}>
         {list.map((sk) => {
           const active = selected === sk.name
           const checked = state.skillSel.indexOf(sk.name) >= 0
           const on = selectors.effSkillEnabled(state, sk.name)
           return (
-            <div key={sk.name} className={'item-row' + (active ? ' active' : '')}
-              data-skillitem data-name={sk.name} role="button" tabIndex={0} aria-pressed={active}
-              aria-label={'查看技能 ' + sk.label} onClick={() => open(sk.name)}
-              onKeyDown={(e: ReactKeyboardEvent<HTMLDivElement>) => {
-                if (e.target !== e.currentTarget) return
-                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(sk.name) }
-              }}>
+            <ResourceRow key={sk.name} active={active}
+              ariaLabel={'查看技能 ' + sk.label}
+              data={{ skillitem: '', name: sk.name }}
+              onClick={() => open(sk.name)}>
               <input type="checkbox" className="skill-check" data-skcheck checked={checked}
                 aria-label={'选择 ' + sk.name} onClick={(e) => e.stopPropagation()}
                 onChange={() => actions.toggleSkillCheck(sk.name)} />
@@ -58,49 +79,43 @@ function SkillList() {
                 <ScopeTag scope={sk.scope} />
                 <GroupStatus kind="skill" name={sk.name} />
               </span>
-            </div>
+            </ResourceRow>
           )
         })}
+      </ResourceGroup>
 
-        <div className="rail-sec">DSH 技能 <span className="count">{dsh.length}</span></div>
+      <ResourceGroup groupId="skill:dsh" title="DSH 技能" count={dsh.length}
+        open={groupOpen('skill:dsh')} onToggle={() => toggle('skill:dsh')}>
+        {catalog.result?.restricted && <div className="note" data-dsh-restricted>当前工作区未受信任，只显示全局 DSH 技能。</div>}
         {catalog.status === 'loading' && <div className="sub-empty">正在读取 DSH 技能注册表…</div>}
         {catalog.status === 'error' && <div className="sub-empty">DSH 技能读取失败：{catalog.error || '未知错误'}</div>}
-        {catalog.result?.restricted && <div className="note" data-dsh-restricted>当前工作区未受信任，只显示全局 DSH 技能。</div>}
-        {catalog.status === 'ready' && dsh.length === 0 && <div className="sub-empty">没有匹配的 DSH 技能</div>}
-        {dsh.map((sk) => {
-          const active = selected === sk.name
-          return (
-            <div key={'dsh:' + sk.name} className={'item-row' + (active ? ' active' : '')}
-              data-dshitem data-name={sk.name} role="button" tabIndex={0} aria-pressed={active}
-              aria-label={'查看 DSH 技能 ' + sk.name} onClick={() => open(sk.name)}
-              onKeyDown={(e: ReactKeyboardEvent<HTMLDivElement>) => {
-                if (e.target !== e.currentTarget) return
-                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(sk.name) }
-              }}>
-              <span className="dot on"></span>
-              <span className="i-main"><span className="i-name">{sk.name}</span>
-                <span className="i-meta">{sk.description || '无描述'} · {DSH_SOURCE_LABEL[sk.source] ?? sk.source}{sk.provider ? ' · ' + sk.provider : ''}</span></span>
-              <span className="i-tail">
-                <span className="tag">DSH</span>
-                {sk.origin === 'workspace' && <span className="tag">工作区</span>}
-                {!sk.model && <span className="tag" title="模型不可调用">仅用户</span>}
-              </span>
-            </div>
-          )
-        })}
-      </div>
-      <div className="list-foot">
-        {state.skillSel.length > 0 && (
-          <div className="bulk-bar on">
-            <span>已选 {state.skillSel.length}</span>
-            <button className="btn tiny" data-skbulk="migrate" onClick={() => actions.openMigrate(state.skillSel)}>复制</button>
-            <button className="btn tiny" data-skbulk="clear" onClick={() => actions.setSkillSel([])}>清空</button>
-          </div>
-        )}
-        <label className="toggle-line"><input id="pluginToggle" type="checkbox" checked={state.showPlugin !== false}
-          onChange={(e) => actions.setShowPlugin(e.target.checked)} /> 显示插件自带技能</label>
-      </div>
-    </>
+        {dshGroups.map((group) => (
+          <ResourceGroup key={'dshgroup:' + group.key} groupId={'dsh:' + group.key} title={group.label}
+            count={group.skills.length} nested
+            open={groupOpen('dsh:' + group.key)} onToggle={() => toggle('dsh:' + group.key)}
+            data={{ dshgroup: group.key }}>
+            {group.skills.map((sk) => {
+              const active = selected === sk.name
+              return (
+                <ResourceRow key={'dsh:' + sk.name} active={active}
+                  ariaLabel={'查看 DSH 技能 ' + sk.name}
+                  data={{ dshitem: '', name: sk.name }}
+                  onClick={() => open(sk.name)}>
+                  <span className="dot on"></span>
+                  <span className="i-main"><span className="i-name">{sk.name}</span>
+                    <span className="i-meta">{sk.description || '无描述'}</span></span>
+                  <span className="i-tail">
+                    {sk.origin === 'workspace' && <span className="tag">工作区</span>}
+                    {!sk.model && <span className="tag" title="模型不可调用">仅用户</span>}
+                  </span>
+                </ResourceRow>
+              )
+            })}
+          </ResourceGroup>
+        ))}
+        {catalog.status === 'ready' && dsh.length === 0 && <div className="sub-empty">{searching ? '没有匹配的 DSH 技能' : '还没有 DSH 技能'}</div>}
+      </ResourceGroup>
+    </ResourceList>
   )
 }
 
@@ -108,42 +123,63 @@ function McpList() {
   const { state, actions, selectors } = useAppViewModel()
   const list = selectors.filteredServers(state)
   const selected = state.selected.mcp?.kind === 'mcp' ? state.selected.mcp.name : null
+  const { isOpen, toggle } = useResourceGroups('mcp')
+  const searching = (state.q.mcp || '').trim().length > 0
+  const open = (id: string) => isOpen(id, searching)
+  const global = list.filter((srv) => srv.scope === 'global')
+  const workspace = list.filter((srv) => srv.scope === 'workspace')
+
+  const rows = (servers: typeof list) => servers.map((srv) => {
+    const active = selected === srv.name
+    const on = srv.status === 'connected' && selectors.effServerEnabled(state, srv.name)
+    const enabledCount = srv.tools.filter((t) => selectors.effToolOn(state, srv.name, t.name)).length
+    return (
+      <ResourceRow key={srv.name} active={active}
+        ariaLabel={'查看 MCP 服务器 ' + srv.label}
+        data={{ mcpitem: '', name: srv.name }}
+        onClick={() => actions.selectResource({ kind: 'mcp', name: srv.name })}>
+        <span className={'dot ' + (on ? 'on' : srv.status === 'disconnected' ? 'off' : 'bad')}></span>
+        <span className="i-main"><span className="i-name">{srv.label} <span className="muted">/ {srv.name}</span></span>
+          <span className="i-meta">{srv.status === 'connected' ? (enabledCount + '/' + srv.tools.length + ' 工具') : '未连接'} · {srv.transport}</span></span>
+        <span className="i-tail">
+          <ScopeTag scope={srv.scope} />
+          <GroupStatus kind="mcp" name={srv.name} />
+        </span>
+      </ResourceRow>
+    )
+  })
+
   return (
-    <>
-      <div className="list-actions">
-        <input id="mcpSearch" className="search" title="在当前作用域可见的全部 MCP 服务器中搜索，跨切换标签保留" placeholder="搜索服务器…" value={state.q.mcp || ''}
-          onChange={(e) => actions.setQuery('mcp', e.target.value)} />
-      </div>
-      <div className="list-actions row2">
-        <button className="btn small" data-mcptool="add" onClick={() => actions.openServerForm(null, true)}>+ 添加</button>
-        <button className="btn small" data-mcptool="refresh" onClick={() => actions.refreshServers()}>刷新状态</button>
-      </div>
-      <div className="scroll">
-        {list.length === 0 && <div className="sub-empty">没有匹配的服务器</div>}
-        {list.map((srv) => {
-          const active = selected === srv.name
-          const on = srv.status === 'connected' && selectors.effServerEnabled(state, srv.name)
-          const enabledCount = srv.tools.filter((t) => selectors.effToolOn(state, srv.name, t.name)).length
-          return (
-            <div key={srv.name} className={'item-row' + (active ? ' active' : '')}
-              data-mcpitem data-name={srv.name} role="button" tabIndex={0} aria-pressed={active}
-              aria-label={'查看 MCP 服务器 ' + srv.label} onClick={() => actions.selectResource({ kind: 'mcp', name: srv.name })}
-              onKeyDown={(e: ReactKeyboardEvent<HTMLDivElement>) => {
-                if (e.target !== e.currentTarget) return
-                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); actions.selectResource({ kind: 'mcp', name: srv.name }) }
-              }}>
-              <span className={'dot ' + (on ? 'on' : srv.status === 'disconnected' ? 'off' : 'bad')}></span>
-              <span className="i-main"><span className="i-name">{srv.label} <span className="muted">/ {srv.name}</span></span>
-                <span className="i-meta">{srv.status === 'connected' ? (enabledCount + '/' + srv.tools.length + ' 工具') : '未连接'} · {srv.transport}</span></span>
-              <span className="i-tail">
-                <ScopeTag scope={srv.scope} />
-                <GroupStatus kind="mcp" name={srv.name} />
-              </span>
-            </div>
-          )
-        })}
-      </div>
-    </>
+    <ResourceList
+      search={{
+        id: 'mcpSearch',
+        value: state.q.mcp || '',
+        onChange: (value) => actions.setQuery('mcp', value),
+        placeholder: '搜索服务器…',
+        title: '在当前作用域可见的全部 MCP 服务器中搜索，跨切换标签保留',
+        ariaLabel: '搜索 MCP 服务器',
+      }}
+      actions={
+        <>
+          <button className="btn small" data-mcptool="add" onClick={() => actions.openServerForm(null, true)}>+ 添加</button>
+          <button className="btn small" data-mcptool="refresh" onClick={() => actions.refreshServers()}>刷新状态</button>
+        </>
+      }
+    >
+      {list.length === 0 && <div className="sub-empty">{searching ? '没有匹配的服务器' : '还没有 MCP 服务器'}</div>}
+      {global.length > 0 && (
+        <ResourceGroup groupId="mcp:global" title="全局" count={global.length}
+          open={open('mcp:global')} onToggle={() => toggle('mcp:global')}>
+          {rows(global)}
+        </ResourceGroup>
+      )}
+      {workspace.length > 0 && (
+        <ResourceGroup groupId="mcp:workspace" title="工作区" count={workspace.length}
+          open={open('mcp:workspace')} onToggle={() => toggle('mcp:workspace')}>
+          {rows(workspace)}
+        </ResourceGroup>
+      )}
+    </ResourceList>
   )
 }
 

@@ -299,6 +299,13 @@ export interface SkillCatalogState {
   error?: string | null
 }
 
+/** 按来源（具体 source 优先；通用 source 回退 provider）分组的 DSH 技能。 */
+export interface DshSkillGroup {
+  key: string
+  label: string
+  skills: DshSkill[]
+}
+
 /** 选中 DSH 技能后按需加载的正文。 */
 export interface SkillDocState {
   status: 'idle' | 'loading' | 'ready' | 'error'
@@ -462,6 +469,9 @@ export interface Selectors {
   visibleDshSkills(state: AppState): DshSkill[]
   /** 在 visibleDshSkills 基础上按搜索词过滤。 */
   filteredDshSkills(state: AppState): DshSkill[]
+  groupDshSkills(skills: DshSkill[]): DshSkillGroup[]
+  /** 技能页可见的 DSH 技能，按来源分组。 */
+  dshSkillGroups(state: AppState): DshSkillGroup[]
   filteredServers(state: AppState): McpServer[]
   /** 按名字读取一条 DSH 技能，不受搜索与插件开关影响。 */
   dshSkill(state: AppState, name: string): DshSkill | undefined

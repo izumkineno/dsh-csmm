@@ -168,6 +168,7 @@ EVDIR/<用例编号>/
 | 编号 | 场景 | 前置 | 步骤 | 预期 | 证据 | 关联实现文件 |
 |---|---|---|---|---|---|---|
 | UX-01 | 四栏 landmark 与页签角色 | 面板已加载 | `dsh_browser_a11y` | `[DOM]` `nav[aria-label=作用域]`、`nav[aria-label=列表]`、`main[aria-label=编辑]`、`aside[aria-label=生效预览]`；`#pageTabs` `role=tablist`，每个 tab `role=tab` + `aria-selected` | a11y 输出 | `App.tsx`、`PageTabs.tsx` |
+| UX-08 | 资源列表共用壳与手风琴 | 三个资源页都有可见数据 | 折叠顶层/DSH 来源组；输入搜索词；切作用域/标签页；刷新页面 | 三页结构一致；`aria-expanded` 与行数同步；搜索自动展开；折叠状态按列表持久化（作用域间保持一致），刷新/切页/切作用域后仍保留 | 截图 + DOM | `ResourceList.tsx`、`ItemList.tsx`、`PromptList.tsx` |
 
 ### 3.9 上下文面板黑盒（v1 负向，P0）
 
@@ -193,7 +194,7 @@ EVDIR/<用例编号>/
 
 ## 4. P1 用例（回归轮次）
 
-> 完整 P1（矩阵 45 条）不在此重复；下表是每轮必跑的高价值子集，其余按矩阵对应行执行。
+> 完整 P1（矩阵 46 条）不在此重复；下表是每轮必跑的高价值子集，其余按矩阵对应行执行。
 
 | 编号 | 场景 | 前置 | 步骤 | 预期 | 证据 | 关联实现文件 |
 |---|---|---|---|---|---|---|
@@ -207,7 +208,8 @@ EVDIR/<用例编号>/
 | SUM-06 | 缺引用诊断 | 选 `缺引用组` → `设为生效` | 点 `诊断` | 3 条 error：分组引用了不存在的提示词段/技能/MCP 服务器；预览该项显示 `缺失`；预算 5 tok（仅自定义） | 截图 | `selectors.ts`（diagnostics） |
 | DAT-06 | 重启后持久化 | 已做若干保存 | 按 SOP §6 停实例 → 重启 → 重开面板 | 数据、生效组、信任状态与重启前一致；`[RPC] revision` 保持；`[DISK]` 无临时文件残留 | 重启前后 store 拷贝 + snapshot | `store.ts` |
 | UX-04 | 弹窗焦点陷阱 | 打开任意弹窗 | 连续 Tab/Shift+Tab；按 Escape | 焦点在弹窗首尾循环；Escape 关闭并返回焦点；背景 `aria-modal=true` | a11y 输出 | `Modals.tsx` |
-| SKL-23 | DSH 技能注册表内联目录与按需正文（只读） | DSH 全局与受信任工作区各有已注册技能；另有未信任工作区 | 打开技能页（自动加载）；看 `[data-dshitem]`；点 `[data-sktool=refresh]`；点 DSH 行；等 `[data-dshpreview]`；点 `[data-dshview=raw]`；切未信任工作区 | 「DSH 技能」段出现；行显示描述/来源/provider；刷新可用；`[data-dsh-pane]` 只读详情含来源、调用策略、说明、路径；正文按需加载并能在预览/原文间切换，原文含 `---`、`name:` 与正文；未信任工作区只显示全局项 + `[data-dsh-restricted]`；`[REV]`/`[DISK]` 不变 | 截图 + store | `ItemList.tsx`、`SkillPane.tsx`、`selectors.ts`、`service.ts`、`hostPort.ts` |
+| SKL-23 | DSH 技能注册表自动加载、来源分组与按需正文（只读） | DSH 全局与受信任工作区各有已注册技能；另有未信任工作区 | 不点技能 tab 先看顶部技能计数；再打开技能页（自动加载）；看 `[data-dshgroup]` 与 `[data-dshitem]`；点 `[data-sktool=refresh]`；点 DSH 行；等 `[data-dshpreview]`；点 `[data-dshview=raw]`；切未信任工作区 | 顶部技能计数在未进入技能页时已更新；「DSH 技能」段按来源分多个组并带数量（具体 source 优先，通用 source 回退 provider）；行显示描述（来源由组标题承担）；刷新可用；`[data-dsh-pane]` 只读详情含来源、调用策略、说明、路径；正文按需加载并能在预览/原文间切换，原文含 `---`、`name:` 与正文；未信任工作区只显示全局项 + `[data-dsh-restricted]`；`[REV]`/`[DISK]` 不变 | 截图 + store | `ItemList.tsx`、`SkillPane.tsx`、`selectors.ts`、`service.ts`、`hostPort.ts` |
+| SKL-24 | 配置集页 DSH 技能只读同步 | SKL-23 数据；选中任一配置集 | 打开技能区；展开一个 DSH 来源组；点一行「详情」 | 出现 `[data-gdshcount]`；来源组只读（`[data-readonly]`），行 `[data-gdshitem]` 无 checkbox/全选/清空；`[data-gdsh-note]` 说明不参与勾选；详情跳到技能页并选中同名 DSH 技能；`[REV]`/`[DISK]` 不变 | 截图 + store | `GroupEditor.tsx`、`selectors.ts` |
 
 ## 5. P2 用例（抽查）
 

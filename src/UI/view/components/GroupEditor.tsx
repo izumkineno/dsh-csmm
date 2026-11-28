@@ -1,5 +1,6 @@
 import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import {
+  DSH_SOURCE_LABEL,
   SCOPE_LABEL,
   type Group,
   type GroupItem,
@@ -42,7 +43,8 @@ function SectionGroup(props: {
   title: string
   selected: number
   total: number
-  tokens: number
+  tokens?: number
+  readonly?: boolean
   onAll?: () => void
   onClear?: () => void
   nested?: boolean
@@ -51,16 +53,16 @@ function SectionGroup(props: {
   const [open, setOpen] = useState(true)
   const nested = props.nested !== false
   return (
-    <details className={nested ? 'subres' : 'res'} open={open}
+    <details className={nested ? 'subres' : 'res'} open={open} data-readonly={props.readonly ? '1' : undefined}
       onToggle={(e) => { const next = e.currentTarget.open; if (next !== open) setOpen(next) }}>
       <summary className={nested ? 'source-head sub-head' : 'res-head'}>
         <span className="twist" aria-hidden="true">▸</span>
         <span>{props.title}</span>
-        <span className="count">{fmt(props.selected)}/{fmt(props.total)}</span>
-        <span className="muted">{fmt(props.tokens)} t</span>
+        <span className="count">{props.readonly ? fmt(props.total) : fmt(props.selected) + '/' + fmt(props.total)}</span>
+        {props.tokens !== undefined && <span className="muted">{fmt(props.tokens)} t</span>}
         <span className="spacer"></span>
-        {props.onAll && <button className="btn tiny" onClick={(e) => { e.preventDefault(); props.onAll?.() }}>全选</button>}
-        {props.onClear && <button className="btn tiny" onClick={(e) => { e.preventDefault(); props.onClear?.() }}>清空</button>}
+        {!props.readonly && props.onAll && <button className="btn tiny" onClick={(e) => { e.preventDefault(); props.onAll?.() }}>全选</button>}
+        {!props.readonly && props.onClear && <button className="btn tiny" onClick={(e) => { e.preventDefault(); props.onClear?.() }}>清空</button>}
       </summary>
       {props.children}
     </details>
@@ -140,6 +142,14 @@ export default function GroupEditor({ g }: { g: Group }) {
   const sectionList = sections.filter((section) => match('section', section.name))
   const serverList = visibleServers.filter((server) => match('mcp', server.name))
   const skillList = visibleSkills.filter((skill) => match('skill', skill.name))
+  const dshSkillList = filter === 'all'
+    ? selectors.visibleDshSkills(state).filter((sk) => {
+        if (!needle) return true
+        const haystack = (sk.name + ' ' + sk.description + ' ' + (sk.whenToUse || '') + ' ' + sk.source + ' ' + sk.provider).toLowerCase()
+        return haystack.includes(needle)
+      })
+    : []
+  const dshSkillGroups = selectors.groupDshSkills(dshSkillList)
   const toolList = dshTools.filter((tool) => match('tool', tool.name))
   const toolCount = dshTools.filter((tool) => check('tool', tool.name)).length
   const sumTokens = (list: Array<{ name: string; tokens: number }>, kind: GroupItemKind) =>
@@ -334,6 +344,7 @@ export default function GroupEditor({ g }: { g: Group }) {
             <span className="count" id="skillCount">{fmt(counts.skill)}/{fmt(visibleSkills.length)}</span>
             <span className="muted">{fmt(selectors.groupTokens({ items: draft.filter((it) => it.kind === 'skill') }, state))} t</span>
             <span className="tag">按可见性</span>
+            {dshSkillList.length > 0 && <span className="tag" data-gdshcount>DSH {dshSkillList.length}</span>}
             <span className="spacer"></span>
             <button className="btn tiny" onClick={(e) => { e.preventDefault(); toggleMany('skill', skillList.map((s) => s.name), true) }}>全选</button>
             <button className="btn tiny" onClick={(e) => { e.preventDefault(); toggleMany('skill', skillList.map((s) => s.name), false) }}>清空</button>
@@ -349,7 +360,27 @@ export default function GroupEditor({ g }: { g: Group }) {
                 onClick={() => { actions.setTab('skill'); actions.selectResource({ kind: 'skill', name: sk.name }) }}>详情</button>
             </div>
           ))}
-          {!skillList.length && <div className="empty">没有匹配的技能。</div>}
+          {dshSkillGroups.length > 0 && (
+            <div className="note gdsh-note" data-gdsh-note>以下 DSH 注册表技能由宿主提供，始终可用，不参与本配置集勾选。</div>
+          )}
+          {dshSkillGroups.map((group) => (
+            <SectionGroup key={'gdsh:' + group.key} title={group.label} selected={0} total={group.skills.length} readonly>
+              {group.skills.map((sk) => (
+                <div key={sk.name} className="res-row" data-gdshitem data-name={sk.name}>
+                  <span className="r-ico">◆</span>
+                  <span className="c-label">{sk.name}</span>
+                  <span className="muted">
+                    {DSH_SOURCE_LABEL[sk.source] ?? sk.source}
+                    {sk.provider ? ' · ' + sk.provider : ''}
+                    {sk.model ? '' : ' · 仅用户'}
+                  </span>
+                  <button className="linkbtn" data-manage="dsh-skill" data-name={sk.name}
+                    onClick={() => { actions.setTab('skill'); actions.selectResource({ kind: 'skill', name: sk.name }) }}>详情</button>
+                </div>
+              ))}
+            </SectionGroup>
+          ))}
+          {!skillList.length && !dshSkillGroups.length && <div className="empty">没有匹配的技能。</div>}
         </details>
         )}
 

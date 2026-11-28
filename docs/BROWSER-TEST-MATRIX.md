@@ -136,12 +136,12 @@ curl -s -X POST "$GUI_ORIGIN/dsh-csmm/rpc" -H 'content-type: application/json' \
 | 作用域链、全局/工作区覆盖、同名覆盖、空分组、显式 none、继承 | SCOPE-01/03/05/06、GRP-01/07/08/09/10/11/12、SKL-06、MCP-06 |
 | 工作区信任弹窗、暂不信任受限、重新信任 | TRUST-01～TRUST-09 |
 | 分组 CRUD、设为生效、草稿保存/还原、白名单与成员勾选 | GRP-02～GRP-06、GRP-15～GRP-23 |
-| 技能 CRUD、复制/迁移、SKILL.md 预览/原文、启停、DSH 技能注册表目录与按需正文 | SKL-01～SKL-21、SKL-23 |
+| 技能 CRUD、复制/迁移、SKILL.md 预览/原文、启停、DSH 技能注册表自动加载/来源分组/按需正文、配置集页只读同步 | SKL-01～SKL-21、SKL-23、SKL-24 |
 | MCP CRUD、添加/编辑弹窗字段、工具开关、测试连接（诚实错误）、原文只读 | MCP-01～MCP-22 |
 | 自定义提示词 CRUD 与逐条启停 | CUS-01～CUS-06 |
 | token 预算（context/section/skill/mcp/custom）、诊断项、复制生效内容 | SUM-01～SUM-12 |
 | secrets 不落 store/不返回 snapshot、revision/并发冲突、持久化与重启 | DAT-01～DAT-11 |
-| 面板注册、侧边栏入口、空/加载/错误态、响应式与基本 a11y | ENV-01～ENV-09、UX-01～UX-07 |
+| 面板注册、侧边栏入口、空/加载/错误态、响应式与基本 a11y | ENV-01～ENV-09、UX-01～UX-08 |
 
 ## 3. 功能矩阵
 
@@ -244,7 +244,8 @@ curl -s -X POST "$GUI_ORIGIN/dsh-csmm/rpc" -H 'content-type: application/json' \
 | SKL-19 | SKILL.md 原文精确 | 选中 `Alpha` | 点 `原文` | `[DOM]` `pre.md-raw[data-skillraw]` 文本与 store `skill.text` 经 `skillFile()` 拼接一致（含 frontmatter）；只读、无保存按钮 | P0 | 原文由 `skillFile()` 生成，不是磁盘字节 |
 | SKL-20 | 打开目录 | 选中 `Alpha` | 点 `打开目录` | `[TOAST]` 出现 `copy.skillDir` 文案（全局/工作区路径）；`[REV]` 不变；`[DISK]` 无变化 | P2 | 无宿主副作用，仅提示 |
 | SKL-21 | 批量选择与迁移预选 | 全局技能页 | 勾选 2 个技能 → 点批量 `复制` | `[DOM]` 底部 `已选 2`；迁移弹窗中这 2 个已勾选；`清空` 清空选择 | P2 | 无 |
-| SKL-23 | DSH 技能注册表内联目录与按需正文（只读） | DSH 全局至少注册 1 个技能；受信任工作区注册 1 个项目技能；另有未信任工作区 | 打开技能页（应自动加载，无需点扫描）；看「DSH 技能」段 `[data-dshitem]`；点顶部 `[data-sktool=refresh]`；点一个 DSH 技能行；等 `[data-dshpreview]`；点 `[data-dshview=raw]`；切到未信任工作区技能页 | `[DOM]` 技能页出现「DSH 技能」段；行显示 name/description/来源 label/provider，无 checkbox；刷新按钮在加载中显示「刷新中…」；点行后 `[data-dsh-pane]` 显示来源、作用域、调用策略、说明与路径，且没有启停/复制/删除按钮；正文先出现 `[data-dsh-doc-loading]`，随后 `[data-dshpreview]` 出现正文；切换原文后 `[data-dshraw]` 含 `---`、`name:` 与技能正文；未信任工作区只显示全局项并出现 `[data-dsh-restricted]`；`[REV]`/`[DISK]` 不变 | P1 | 只读：目录来自 `ctx.skills.list()`，正文在选中时经 `ctx.skills.get()` 按需加载；frontmatter 按注册字段重建，正文来自 `content`；不导入、不启停、不写 DSH 技能目录，也不进入 store；工作区项目技能依赖 `cwd`，未信任时不读取 |
+| SKL-23 | DSH 技能注册表自动加载、按来源分组与按需正文（只读） | DSH 全局至少注册 2 个不同 provider 的技能；受信任工作区注册 1 个项目技能；另有未信任工作区 | 打开面板但不点技能 tab，先看顶部「技能」计数；再点技能 tab（应已自动加载，无需点扫描）；看来源组标题 `[data-dshgroup]` 与行 `[data-dshitem]`；点顶部 `[data-sktool=refresh]`；点一个 DSH 技能行；等 `[data-dshpreview]`；点 `[data-dshview=raw]`；切到未信任工作区技能页 | `[DOM]` 未进入技能页时顶部「技能」计数已大于 0；无「扫描 DSH」按钮，只有刷新；「DSH 技能」段按来源分成多个 `[data-dshgroup]`，组标题为具体来源（如 `oh-my-dsh`；通用 source 回退 provider）并带数量；行显示 name/description（来源由组标题承担），行尾只保留工作区/仅用户标签，无 checkbox；刷新按钮在加载中显示「刷新中…」；点行后 `[data-dsh-pane]` 显示来源、作用域、调用策略、说明与路径，且没有启停/复制/删除按钮；正文先出现 `[data-dsh-doc-loading]`，随后 `[data-dshpreview]` 出现正文；切换原文后 `[data-dshraw]` 含 `---`、`name:` 与技能正文；未信任工作区只显示全局项并出现 `[data-dsh-restricted]`；`[REV]`/`[DISK]` 不变 | P1 | 只读：目录来自 `ctx.skills.list()`，正文在选中时经 `ctx.skills.get()` 按需加载；frontmatter 按注册字段重建，正文来自 `content`；不导入、不启停、不写 DSH 技能目录，也不进入 store；工作区项目技能依赖 `cwd`，未信任时不读取 |
+| SKL-24 | 配置集页同步展示 DSH 技能（只读） | SKL-23 的数据；「配置集与生效」页已选中任一配置集 | 打开技能区；展开一个 DSH 来源组；点其中一行的「详情」 | `[DOM]` 技能区出现 `[data-gdshcount]`；每个来源一个只读组（`[data-readonly]`），组内 `[data-gdshitem]` 行显示名称/来源/调用策略，无 checkbox、无全选/清空；`[data-gdsh-note]` 说明不参与本配置集勾选；点详情跳到技能页并选中同名 DSH 技能；勾选/清空插件技能不影响这些行；`[REV]`/`[DISK]` 不变 | P1 | DSH 注册表技能由宿主提供，不能写成 group item；只读展示，避免伪造勾选状态 |
 
 ### 3.6 MCP 服务器（MCP）
 
@@ -318,6 +319,7 @@ curl -s -X POST "$GUI_ORIGIN/dsh-csmm/rpc" -H 'content-type: application/json' \
 | UX-05 | focus-visible 可见 | 键盘 Tab | 观察焦点环 | `[DOM]` 焦点元素出现 `outline: 2px` 主题色（`styles.css` 的 `:focus-visible`） | P2 | 截图/像素判定依赖人工 |
 | UX-06 | 响应式断点 | 桌面窗口 | 缩窄到 <1180、<960、<640 | `[DOM]` 1180 以下列宽收紧；960 以下变单列（四栏纵向堆叠）；640 以下 MCP 表单单列；无横向溢出 | P2 | 浏览器工具没有 viewport 设置接口，需人工拖拽窗口；自动化只能做静态 CSS 检查 |
 | UX-07 | 空/加载/错误态 | 分别见 SCOPE-05、ENV-06、ENV-07 | 打开面板 | `[DOM]` 空态文案齐全；错误态 `CSMM 后端未连接：…` + `重试`；加载态 `正在加载 CSMM 配置…` | P1 | 加载态太快，通常不可稳定断言；错误态需停 host |
+| UX-08 | 资源列表共用壳与手风琴 | 三个资源页都有可见数据 | 观察三页结构；折叠任一顶层或 DSH 来源组；输入搜索词；切换作用域/标签页；刷新页面 | `[DOM]` 三页均为「搜索行 → 操作行 → 滚动区」同构；分组按钮有 `aria-expanded`/`aria-controls`，折叠后组内行消失；搜索命中项所在组自动展开；折叠状态按列表持久化（作用域间保持一致），刷新/切页/切作用域后仍保留 | P1 | 提示词搜索仍是页内本地状态；MCP 需有全局/工作区服务器才能验证分组；折叠状态存 `localStorage`（键前缀 `dsh-csmm:groups:v1:`），禁用存储时仅当前挂载内生效 |
 
 ## 4. 已知限制与不可测项（按影响排序）
 
