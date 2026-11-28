@@ -161,6 +161,7 @@ function makeStore(overrides: Partial<StoreDocument> = {}): StoreDocument {
     customs,
     skills,
     servers,
+    skillPolicy: [],
     ...overrides,
   }
 }

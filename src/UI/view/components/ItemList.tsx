@@ -101,10 +101,11 @@ function SkillList() {
                   ariaLabel={'查看 DSH 技能 ' + sk.name}
                   data={{ dshitem: '', name: sk.name }}
                   onClick={() => open(sk.name)}>
-                  <span className="dot on"></span>
+                  <span className={sk.disabled ? 'dot off' : 'dot on'}></span>
                   <span className="i-main"><span className="i-name">{sk.name}</span>
                     <span className="i-meta">{sk.description || '无描述'}</span></span>
                   <span className="i-tail">
+                    {sk.disabled && <span className="tag" title="当前作用域策略已停用">已停用</span>}
                     {sk.origin === 'workspace' && <span className="tag">工作区</span>}
                     {!sk.model && <span className="tag" title="模型不可调用">仅用户</span>}
                   </span>

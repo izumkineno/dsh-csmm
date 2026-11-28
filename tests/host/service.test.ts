@@ -560,7 +560,7 @@ test('resolveEditableSource rejects read-only, escaping and non-SKILL paths', as
   fs.writeFileSync(outsideFile, 'outside', 'utf8')
   const notes = path.join(workspaceRoot, 'notes.md')
   fs.writeFileSync(notes, 'notes', 'utf8')
-  const good = path.join(workspaceRoot, 'skills', 'good', 'SKILL.md')
+  const good = path.join(workspaceRoot, '.dsh', 'skills', 'good', 'SKILL.md')
   fs.mkdirSync(path.dirname(good), { recursive: true })
   fs.writeFileSync(good, '---\nname: good\n---\n\nBODY', 'utf8')
   const paths: Record<string, string> = { global: good, outside: outsideFile, notes, good }
@@ -617,7 +617,7 @@ test('resolveEditableSource rejects read-only, escaping and non-SKILL paths', as
 
 function saveFixture(initial = '---\nname: edit\n---\n\nOLD') {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-csmm-save-'))
-  const file = path.join(root, 'skills', 'edit', 'SKILL.md')
+  const file = path.join(root, '.dsh', 'skills', 'edit', 'SKILL.md')
   fs.mkdirSync(path.dirname(file), { recursive: true })
   fs.writeFileSync(file, initial, 'utf8')
   const registry: SkillRegistryLike = {

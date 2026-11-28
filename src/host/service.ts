@@ -15,6 +15,8 @@ import type {
   SecretsDocument,
   ServerSecretsPatch,
   SkillCatalogResult,
+  SkillPolicyRecord,
+  SkillPolicyState,
   SkillRecord,
   Snapshot,
   StoreDocument,
@@ -32,6 +34,7 @@ import {
   visibleSkills,
 } from '../shared/resolve'
 import { MAX_SKILL_TEXT_BYTES, byteLengthUtf8, normalizeSkillName } from '../shared/skillMarkdown'
+import { canDisableSkillSource, resolveSkillPolicy, skillRootLabel, skillRootPriority } from '../shared/skillPolicy'
 import type { ScopePaths } from './paths'
 import { atomicWrite, loadSecrets, loadStore, saveSecrets, saveStore, withFileLock, withLock } from './store'
 
@@ -124,7 +127,12 @@ async function pruneSkillBackups(dir: string, name: string, keep: number): Promi
 }
 
 
-function toDshSkill(summary: DshSkillSummary): DshSkill {
+function toDshSkill(
+  summary: DshSkillSummary,
+  policy?: { state: SkillPolicyState; from: 'workspace' | 'global' | 'default' },
+): DshSkill {
+  const effective = policy ?? { state: 'on' as SkillPolicyState, from: 'default' as const }
+  const canDisable = canDisableSkillSource(summary.source) && summary.provider !== 'dsh-csmm'
   const skill: DshSkill = {
     name: summary.name,
     description: summary.description,
@@ -133,10 +141,36 @@ function toDshSkill(summary: DshSkillSummary): DshSkill {
     model: summary.invocation.modelInvocable,
     user: summary.invocation.userInvocable,
     origin: summary.source.startsWith('project-') ? 'workspace' : 'global',
+    rootPriority: skillRootPriority(summary.source),
+    rootLabel: skillRootLabel(summary.source),
+    canDisable,
+    policy: effective.state,
+    policyFrom: effective.from,
+    disabled: canDisable && effective.state === 'off',
   }
   if (summary.whenToUse) skill.whenToUse = summary.whenToUse
   if (summary.path) skill.path = summary.path
   return skill
+}
+
+/** One record per name+source whose resolved policy is off in the requested scope. */
+function effectiveOffPolicies(
+  records: readonly SkillPolicyRecord[],
+  scope: Scope,
+  cwd: string | undefined,
+): SkillPolicyRecord[] {
+  const seen = new Set<string>()
+  const off: SkillPolicyRecord[] = []
+  for (const record of records) {
+    const key = record.name + '\u0000' + record.source
+    if (seen.has(key)) continue
+    seen.add(key)
+    const resolution = resolveSkillPolicy(records, scope, cwd, record.name, record.source)
+    if (resolution.state === 'off' && canDisableSkillSource(record.source) && record.source !== 'dsh-csmm') {
+      off.push(record)
+    }
+  }
+  return off
 }
 
 interface DshTarget {
@@ -194,10 +228,32 @@ export class CsmmService {
     }
 
     try {
-      const summaries = await target.registry.list(target.cwd ? { cwd: target.cwd } : {})
+      const state = this.loadMerged()
+      const policyScope = target.restricted ? { kind: 'global' as const } : this.requestedScope(scope)
+      const records = state.doc.skillPolicy
+      const decorate = (summary: DshSkillSummary): DshSkill =>
+        toDshSkill(
+          summary,
+          resolveSkillPolicy(records, policyScope, target.cwd, summary.name, summary.source),
+        )
+      const summaries = (await target.registry.list(target.cwd ? { cwd: target.cwd } : {}))
+        .filter((summary) => !(summary.provider === 'dsh-csmm' && summary.source === 'dsh-csmm:off'))
+      const skills = summaries.map(decorate)
+      const names = new Set(skills.map((skill) => skill.name))
+      for (const record of effectiveOffPolicies(records, policyScope, target.cwd)) {
+        if (names.has(record.name) || record.source === 'dsh-csmm') continue
+        names.add(record.name)
+        skills.push(decorate({
+          name: record.name,
+          description: '在当前作用域已停用',
+          source: record.source,
+          provider: 'dsh-csmm:policy',
+          invocation: { modelInvocable: false, userInvocable: false },
+        }))
+      }
       return {
         scannedAt,
-        skills: summaries.map(toDshSkill),
+        skills,
         errors: [],
         ...(target.restricted ? { restricted: true } : {}),
       }
@@ -227,14 +283,57 @@ export class CsmmService {
     }
 
     try {
+      const state = this.loadMerged()
+      const policyScope = target.restricted ? { kind: 'global' as const } : this.requestedScope(scope)
       const found = await target.registry.get(name, target.cwd ? { cwd: target.cwd } : {})
-      if (!found) {
-        return { errors: ['技能不存在或当前作用域不可见'], ...restricted }
+      const shadowed = found?.provider === 'dsh-csmm' && found.source === 'dsh-csmm:off'
+      if (!found || shadowed) {
+        const off = effectiveOffPolicies(state.doc.skillPolicy, policyScope, target.cwd)
+          .find((record) => record.name === name)
+        if (!off) return { errors: ['技能不存在或当前作用域不可见'], ...restricted }
+        const body = '该技能在当前作用域已停用。重新启用后重开会话生效。'
+        return {
+          skill: {
+            ...toDshSkill(
+              {
+                name: off.name,
+                description: '在当前作用域已停用',
+                source: off.source,
+                provider: 'dsh-csmm:policy',
+                invocation: { modelInvocable: false, userInvocable: false },
+              },
+              resolveSkillPolicy(state.doc.skillPolicy, policyScope, target.cwd, off.name, off.source),
+            ),
+            content: body,
+            sha256: sha256Hex(Buffer.from(body, 'utf8')),
+          },
+          errors: [],
+          ...restricted,
+        }
+      }
+      const policy = resolveSkillPolicy(
+        state.doc.skillPolicy,
+        policyScope,
+        target.cwd,
+        found.name,
+        found.source,
+      )
+      if (canDisableSkillSource(found.source) && found.provider !== 'dsh-csmm' && policy.state === 'off') {
+        const body = '该技能在当前作用域已停用。重新启用后重开会话生效。'
+        return {
+          skill: {
+            ...toDshSkill(found, policy),
+            content: body,
+            sha256: sha256Hex(Buffer.from(body, 'utf8')),
+          },
+          errors: [],
+          ...restricted,
+        }
       }
       const errors: string[] = []
       let raw: string | undefined
       let sha256 = sha256Hex(Buffer.from(found.content, 'utf8'))
-      if (!target.restricted && typeof found.path === 'string' && found.path) {
+      if (!target.restricted && found.source !== 'project-agents' && typeof found.path === 'string' && found.path) {
         try {
           const read = await this.readSkillFile(found.path)
           raw = read.raw
@@ -244,7 +343,7 @@ export class CsmmService {
         }
       }
       const skill = {
-        ...toDshSkill(found),
+        ...toDshSkill(found, policy),
         content: found.content,
         ...(raw === undefined ? {} : { raw }),
         sha256,
@@ -359,6 +458,9 @@ export class CsmmService {
       path.isAbsolute(relative)
     ) {
       throw new ServiceError('E_PATH_ESCAPE', '源文件不在当前工作区内')
+    }
+    if (relative.split(path.sep)[0] !== '.dsh') {
+      throw new ServiceError('E_SOURCE_READONLY', '只允许编辑工作区 .dsh 下的项目技能源文件')
     }
 
     return { path: fileReal, ...(await this.readSkillFile(fileReal)) }
@@ -562,6 +664,37 @@ export class CsmmService {
         }
         return
       }
+      case 'skill.policy': {
+        const name = typeof command.name === 'string' ? command.name.trim() : ''
+        const source = typeof command.source === 'string' ? command.source.trim() : ''
+        if (!name || !source) throw new ServiceError('E_PAYLOAD', 'name and source are required')
+        if (command.state !== 'on' && command.state !== 'off' && command.state !== 'inherit') {
+          throw new ServiceError('E_PAYLOAD', 'state must be on, off, or inherit')
+        }
+        if (command.state !== 'inherit' && !canDisableSkillSource(source)) {
+          throw new ServiceError('E_PAYLOAD', 'project/runtime skills cannot be toggled')
+        }
+        const cwd = scope.kind === 'workspace' ? command.cwd?.trim() || undefined : undefined
+        doc.skillPolicy = (doc.skillPolicy ?? []).filter(
+          (record) =>
+            !(
+              record.name === name &&
+              record.source === source &&
+              sameScope(record.scope, scope) &&
+              (record.cwd ?? undefined) === cwd
+            ),
+        )
+        if (command.state !== 'inherit') {
+          doc.skillPolicy.push({
+            name,
+            source,
+            scope: cloneScope(scope),
+            ...(cwd ? { cwd } : {}),
+            state: command.state,
+          })
+        }
+        return
+      }
       case 'mcp.save': {
         const incoming = command.server as McpServerRecord & {
           env?: Record<string, string>
@@ -663,6 +796,7 @@ export class CsmmService {
       customs: [...global.customs, ...(workspace?.customs ?? [])],
       skills: [...global.skills, ...(workspace?.skills ?? [])],
       servers: [...global.servers, ...(workspace?.servers ?? [])],
+      skillPolicy: [...(workspace?.skillPolicy ?? []), ...global.skillPolicy],
       disabledPrompts: [
         ...new Set([
           ...(global.disabledPrompts ?? []),

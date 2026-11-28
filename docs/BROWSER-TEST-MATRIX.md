@@ -1,8 +1,8 @@
 # dsh-csmm 浏览器功能测试矩阵（t2）
 
-> 本文件是 `t2` 的交付物：把 dsh-csmm **当前实现**（不是 README 里的旧 SPEC 引入包）拆成可执行的浏览器测试清单与可观察断言。只写清单，不写测试代码，不修改 `src/`。
+> 本文件是 `t2` 的交付物：把 dsh-csmm **当前实现**拆成可执行的浏览器测试清单与可观察断言。只写清单，不写测试代码，不修改 `src/`。
 >
-> 依据：`src/**`（提交 `e4d961d` 拆分视图模型及之前全部提交）、`.omd/specs/deep-interview-dsh-csmm-backend.md`、`.omd/prd/dsh-csmm-backend.json`。仓库根的 `README.md`/`AGENTS.md` 描述的是旧 SPEC 包，与当前插件实现不一致，不作为本矩阵依据。
+> 依据：`src/**` 当前实现、`.omd/specs/deep-interview-dsh-csmm-backend.md`、`.omd/prd/dsh-csmm-backend.json`。仓库根的 `README.md`/`AGENTS.md` 已与当前实现同步，是本矩阵的安装、存储与 RPC 依据；早期 `SPEC.md` 仅作设计参考。
 
 ## 0. 测试环境与入口
 
@@ -136,7 +136,7 @@ curl -s -X POST "$GUI_ORIGIN/dsh-csmm/rpc" -H 'content-type: application/json' \
 | 作用域链、全局/工作区覆盖、同名覆盖、空分组、显式 none、继承 | SCOPE-01/03/05/06、GRP-01/07/08/09/10/11/12、SKL-06、MCP-06 |
 | 工作区信任弹窗、暂不信任受限、重新信任 | TRUST-01～TRUST-09 |
 | 分组 CRUD、设为生效、草稿保存/还原、白名单与成员勾选 | GRP-02～GRP-06、GRP-15～GRP-23 |
-| 技能 CRUD、复制/迁移、SKILL.md 预览/原文、启停、DSH 技能注册表自动加载/来源分组/按需正文、配置集页只读同步、插件技能编辑/导入、DSH 复制与工作区源编辑 | SKL-01～SKL-26 |
+| 技能 CRUD、复制/迁移、SKILL.md 预览/原文、启停、DSH 技能注册表自动加载/来源分组/按需正文、配置集页只读同步、插件技能编辑/导入、DSH 复制与工作区源编辑、DSH 作用域策略/根优先级/停用继承 | SKL-01～SKL-27 |
 | MCP CRUD、添加/编辑弹窗字段、工具开关、测试连接（诚实错误）、原文只读 | MCP-01～MCP-22 |
 | 自定义提示词 CRUD 与逐条启停 | CUS-01～CUS-06 |
 | token 预算（context/section/skill/mcp/custom）、诊断项、复制生效内容 | SUM-01～SUM-12 |
@@ -248,6 +248,7 @@ curl -s -X POST "$GUI_ORIGIN/dsh-csmm/rpc" -H 'content-type: application/json' \
 | SKL-24 | 配置集页同步展示 DSH 技能（只读） | SKL-23 的数据；「配置集与生效」页已选中任一配置集 | 打开技能区；展开一个 DSH 来源组；点其中一行的「详情」 | `[DOM]` 技能区出现 `[data-gdshcount]`；每个来源一个只读组（`[data-readonly]`），组内 `[data-gdshitem]` 行显示名称/来源/调用策略，无 checkbox、无全选/清空；`[data-gdsh-note]` 说明不参与本配置集勾选；点详情跳到技能页并选中同名 DSH 技能；勾选/清空插件技能不影响这些行；`[REV]`/`[DISK]` 不变 | P1 | DSH 注册表技能由宿主提供，不能写成 group item；只读展示，避免伪造勾选状态 |
 | SKL-25 | 插件技能编辑与 Markdown/目录导入 | 受信任工作区 A；选中插件技能 `Alpha`；准备含 frontmatter 的 `import-test.md` 与含 `SKILL.md` 的目录 | 选中 `Alpha` → 点 `[data-skill-edit]`；改 label/desc/正文、取消 model → 点 `[data-skill-save]`；刷新后重选；`+ 添加` 上传 .md；再上传同名；用目录导入 | `[DOM]` name 字段 `readonly`；`data-skill-field` 覆盖 label/desc/text/model/user；修改后 `data-skill-dirty="true"`，保存可用；保存后 `[TOAST]` `已保存技能 alpha`；`[RPC] skill.save`；`[REV] +1`；`[DISK]` text/desc/model 落库且刷新后仍在；`[TOAST]` 导入为 `已添加 N 个技能到<当前作用域>`，正文与 UTF-8 bytes 来自文件而非占位；同名同作用域跳过且列表不重复；导入后不自动加组；zip 不在 accept | P1 | 保存不自动重载注册表，需重开会话；导入不支持 zip；>800000 字节拒绝 |
 | SKL-26 | DSH 技能复制到工作区与工作区源编辑 | 受信任工作区 A；DSH 全局技能 `global-demo`；工作区 project 技能 `ws-demo` 有真实 SKILL.md；工作区有本层生效配置集；另备继承全局配置集场景 | 选中 `global-demo` → 点 `[data-dsh-copy]`；看工作区 store 与本层组；选中 `ws-demo` → 点 `[data-dshsource-edit]`；改正文 → `[data-dshsource-save]`；再从磁盘外部改源文件后保存一次；点 `[data-dshsource-reload]` | `[DOM]` 复制按钮只在全局来源出现；复制后工作区出现同名插件技能，全局定义不变；有本层组则 `[TOAST]` 已复制并加入配置集，继承组只提示不追加；工作区源编辑器有 `data-dshsource-status/save/reload/note`；保存发 `[RPC] skillSourceSave`，源文件字节更新，旧字节进 `skill-backups/`，提示重开会话；外部改动后保存进入 `status=conflict`，显示 `data-dshsource-conflict`，文本保留且保存禁用；重载后恢复 ready；DSH 分支无启停/删除 | P1 | 全局/用户源不可编辑；仅工作区 project 的 SKILL.md；保存不自动重载注册表；备份保留 20 份 |
+| SKL-27 | DSH 技能作用域策略与根优先级 | 受信任工作区 A；DSH 全局/user/bundled 技能各一个；工作区 project `.dsh` 与 `.agents` 技能各一个；准备新开会话 | 选中全局技能看根优先级 → 切工作区 → 点 `[data-dsh-policy="off"]` → 切全局页点 `[data-dsh-policy="off"]` → 回工作区点 `[data-dsh-policy="inherit"]` → 选中 project `.dsh` 与 `.agents` 技能；随后新开一个会话再注册 | `[DOM]` `[data-dsh-priority]` 显示 1~6 与标签（project .dsh > project .agents > custom > user .dsh > user .agents > bundled）；`[data-dsh-policy-state]` 显示 on/off，`[data-dsh-policy-from]` 显示 default/global/workspace；工作区 off 写入 `skillPolicy` 且 `[DISK]` 全局不变；全局 off 在工作区显示继承、工作区 on 可重开；project 技能显示 `[data-dsh-policy-locked]`，无启停按钮；project `.agents` 不出现 `[data-dshsource-edit]`，project `.dsh` 可编辑；停用项在当前会话仍可见但新会话注册为不可调用遮蔽；`[REV] +1` | P1 | 策略只写插件 store；停用依赖下次 agent 创建，当前会话不承诺即时；project 技能不可运行时停用；`.agents` 归 Git、插件只读 |
 
 ### 3.6 MCP 服务器（MCP）
 

@@ -1,6 +1,6 @@
 # dsh-csmm 浏览器测试清单（t3）
 
-> 本文件是 `t3` 交付物之一：把 `docs/BROWSER-TEST-MATRIX.md`（t2，128 条）收敛成**可执行、可判定、可取证**的用例清单。执行机制（启动、播种、浏览器调用、证据、清理）见 `docs/BROWSER-TEST-SOP.md`（下称 SOP）。
+> 本文件是 `t3` 交付物之一：把 `docs/BROWSER-TEST-MATRIX.md`（t2，129 条）收敛成**可执行、可判定、可取证**的用例清单。执行机制（启动、播种、浏览器调用、证据、清理）见 `docs/BROWSER-TEST-SOP.md`（下称 SOP）。
 >
 > 编号规则：沿用 t2 矩阵的用例编号（`ENV-xx`、`SCOPE-xx`、`TRUST-xx`、`GRP-xx`、`CUS-xx`、`SKL-xx`、`MCP-xx`、`SUM-xx`、`DAT-xx`、`UX-xx`），便于与矩阵逐条对照。新增 `CTX-01/CTX-02` 是本轮追加的“上下文面板黑盒”用例（用户要求），矩阵中没有对应行。
 >
@@ -194,7 +194,7 @@ EVDIR/<用例编号>/
 
 ## 4. P1 用例（回归轮次）
 
-> 完整 P1（矩阵 46 条）不在此重复；下表是每轮必跑的高价值子集，其余按矩阵对应行执行。
+> 完整 P1（矩阵 47 条）不在此重复；下表是每轮必跑的高价值子集，其余按矩阵对应行执行。
 
 | 编号 | 场景 | 前置 | 步骤 | 预期 | 证据 | 关联实现文件 |
 |---|---|---|---|---|---|---|
@@ -212,6 +212,7 @@ EVDIR/<用例编号>/
 | SKL-24 | 配置集页 DSH 技能只读同步 | SKL-23 数据；选中任一配置集 | 打开技能区；展开一个 DSH 来源组；点一行「详情」 | 出现 `[data-gdshcount]`；来源组只读（`[data-readonly]`），行 `[data-gdshitem]` 无 checkbox/全选/清空；`[data-gdsh-note]` 说明不参与勾选；详情跳到技能页并选中同名 DSH 技能；`[REV]`/`[DISK]` 不变 | 截图 + store | `GroupEditor.tsx`、`selectors.ts` |
 | SKL-25 | 插件技能编辑与导入 | 受信任工作区；选中插件技能；准备 .md 与目录 | 切 `[data-skill-edit]` → 改 label/desc/正文/调用策略 → 保存；刷新后重选；添加 .md、同名 .md、目录 | 字段锚点齐全、name 只读、dirty 后保存可用；toast `已保存技能 <name>`；`skill.save`、revision +1、刷新仍在；导入真实正文与 UTF-8 bytes、同名跳过、zip 被拒；不自动加组 | 截图 + store + snapshot | `SkillPane.tsx`、`SkillEditor.tsx`、`resources.ts`、`skillMarkdown.ts` |
 | SKL-26 | DSH 复制与工作区源编辑 | 全局 DSH 技能；工作区 project 技能；本层配置集 | 点 `[data-dsh-copy]`；切 `[data-dshsource-edit]` 改正文保存；外部改源文件后再保存；重载 | 复制生成同名工作区插件技能且全局不变；本层组追加、继承组只提示；源保存发 `skillSourceSave`、更新字节、备份旧字节、提示重开会话；冲突显示 SHA 且保留文本、禁用保存；DSH 分支无启停/删除 | 截图 + 两个 store + 备份目录 | `SkillPane.tsx`、`SkillSourceEditor.tsx`、`resources.ts`、`service.ts`（saveDshSkillSource） |
+| SKL-27 | DSH 作用域策略与根优先级 | 全局 user/bundled 技能；工作区 project `.dsh`/`.agents` 技能；新开会话 | 看 `[data-dsh-priority]`；工作区点停用；全局点停用；工作区点继承；选 project 技能；`.agents` 看编辑入口；新开会话 | 根优先级 1~6 与标签正确；`data-dsh-policy-state/from` 显示 on/off 与 default/global/workspace；工作区 off 只写工作区 store；全局 off 被继承、工作区 on 可重开；project 显示 `data-dsh-policy-locked` 且无启停；`.agents` 无 `data-dshsource-edit`，`.dsh` 可编辑；停用项新会话不可调用；revision +1 | 截图 + 两个 store + 新会话 | `SkillPane.tsx`、`useAppViewModel.tsx`、`service.ts`、`materialize.ts`、`skillPolicy.ts` |
 
 ## 5. P2 用例（抽查）
 

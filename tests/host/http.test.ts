@@ -155,7 +155,7 @@ test('skillCatalog returns the DSH registry skills for the requested scope', asy
 function skillSourceService(options: { globalSource?: boolean } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-csmm-http-save-'))
   const workspaceRoot = path.join(root, 'repo')
-  const file = path.join(workspaceRoot, 'skills', 'edit', 'SKILL.md')
+  const file = path.join(workspaceRoot, '.dsh', 'skills', 'edit', 'SKILL.md')
   fs.mkdirSync(path.dirname(file), { recursive: true })
   const initial = '---\nname: edit\n---\n\nOLD'
   fs.writeFileSync(file, initial, 'utf8')

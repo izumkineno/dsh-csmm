@@ -166,6 +166,46 @@ export function AppViewModelProvider({ host, children }: { host: HostPort; child
             ))
           })
       },
+      async setDshSkillPolicy(name, source, state) {
+        const current = stateRef.current
+        const scope = { ...current.scope }
+        const key = scopeKey(scope)
+        const cwd = scope.kind === 'workspace'
+          ? current.meta.workspaces.find((workspace) => workspace.id === scope.id)?.path
+          : undefined
+        if (scope.kind === 'workspace' && !cwd) {
+          toast('工作区路径不可用，无法保存技能策略')
+          return
+        }
+        const result = await commit([{
+          type: 'skill.policy',
+          scope,
+          name,
+          source,
+          state,
+          ...(cwd ? { cwd } : {}),
+        }], { continueOnError: false })
+        if (result.failed.length) {
+          toast('保存技能策略失败：' + (result.failed[0]?.error ?? '未知错误'))
+          return
+        }
+        if (scopeKey(stateRef.current.scope) !== key || !host.listDshSkills) return
+        try {
+          const catalog = await host.listDshSkills(scope)
+          setState((prev) => (
+            scopeKey(prev.scope) === key
+              ? {
+                  ...prev,
+                  catalog: { status: 'ready', result: catalog, error: null },
+                  dshDoc: { status: 'idle' },
+                  sourceState: { status: 'idle' },
+                }
+              : prev
+          ))
+        } catch (err: unknown) {
+          toast('刷新技能目录失败：' + (err instanceof Error ? err.message : String(err)))
+        }
+      },
       loadDshSkill(name, force = false) {
         const current = stateRef.current.dshDoc
         if (!force && current.name === name && (current.status === 'loading' || current.status === 'ready')) return

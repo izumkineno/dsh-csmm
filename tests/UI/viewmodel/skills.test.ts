@@ -76,6 +76,12 @@ function dshGlobal(overrides: Partial<DshSkill> = {}): DshSkill {
     model: true,
     user: true,
     origin: 'global',
+    rootPriority: 4,
+    rootLabel: '用户 .dsh',
+    canDisable: true,
+    policy: 'on',
+    policyFrom: 'default',
+    disabled: false,
     ...overrides,
   }
 }

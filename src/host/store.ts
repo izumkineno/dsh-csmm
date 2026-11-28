@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import type { SecretsDocument, StoreDocument } from '../shared/types'
+import type { SecretsDocument, SkillPolicyRecord, StoreDocument } from '../shared/types'
 import type { ScopePaths } from './paths'
 
 export type StoreErrorCode =
@@ -30,6 +30,7 @@ export function emptyStore(): StoreDocument {
     customs: [],
     skills: [],
     servers: [],
+    skillPolicy: [],
     disabledPrompts: [],
   }
 }
@@ -214,6 +215,21 @@ function normalizeStore(input: unknown, file: string): StoreDocument {
     customs: Array.isArray(doc.customs) ? doc.customs : [],
     skills: Array.isArray(doc.skills) ? doc.skills : [],
     servers: Array.isArray(doc.servers) ? doc.servers : [],
+    skillPolicy: Array.isArray(doc.skillPolicy)
+      ? doc.skillPolicy.filter(
+          (record): record is SkillPolicyRecord =>
+            !!record &&
+            typeof record === 'object' &&
+            typeof record.name === 'string' &&
+            record.name.trim().length > 0 &&
+            typeof record.source === 'string' &&
+            record.source.trim().length > 0 &&
+            (record.scope?.kind === 'global' ||
+              (record.scope?.kind === 'workspace' && typeof record.scope.id === 'string')) &&
+            (record.state === 'on' || record.state === 'off') &&
+            (record.cwd === undefined || typeof record.cwd === 'string'),
+        )
+      : [],
     disabledPrompts: Array.isArray(doc.disabledPrompts)
       ? doc.disabledPrompts.filter(
           (name): name is string => typeof name === 'string' && !name.startsWith('dsh-csmm:'),

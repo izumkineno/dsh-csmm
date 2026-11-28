@@ -1,6 +1,7 @@
 import os from 'node:os'
 import path from 'node:path'
-import type { CustomPromptRecord, GroupRecord, McpServerRecord, SectionRecord, SkillRecord, StoreDocument } from '../shared/types'
+import type { CustomPromptRecord, GroupRecord, McpServerRecord, SectionRecord, SkillPolicyRecord, SkillRecord, StoreDocument } from '../shared/types'
+import { canDisableSkillSource, resolveSkillPolicy } from '../shared/skillPolicy'
 import { winningLayer } from '../shared/resolve'
 import { isAllowed, sectionAllowlist, toolAllowlist } from '../shared/policy'
 import { globalPaths, workspacePaths } from './paths'
@@ -49,8 +50,15 @@ export interface SkillRegistrationLike {
   provider?: string
 }
 
+export interface SkillCatalogLike {
+  name: string
+  source?: string
+  provider?: string
+}
+
 export interface SkillsLike {
   register(skill: SkillRegistrationLike): () => void
+  list?(options: { cwd?: string }): Promise<SkillCatalogLike[]> | SkillCatalogLike[]
 }
 
 export interface WorkspaceRegistryLike {
@@ -103,22 +111,54 @@ export async function registerAgentSkills(
   const target = await resolveAgentTarget(agent, options)
   if (!target || !skills?.register) return undefined
   const view = effectiveView(target)
-  if (!view) return undefined
+  const registrations: Array<() => void> = []
+  const registeredNames = new Set<string>()
+  if (view) {
+    for (const item of view.group.items.filter((entry) => entry.kind === 'skill')) {
+      const skill = pick<SkillRecord>(view.workspaceDoc.skills, view.globalDoc.skills, item.name)
+      if (!skill || skill.enabled === false) continue
+      registeredNames.add(skill.name)
+      registrations.push(skills.register({
+        name: skill.name,
+        description: skill.desc.trim() || skill.label || skill.name,
+        ...(skill.whenToUse ? { whenToUse: skill.whenToUse } : {}),
+        content: skill.text.trim() || skill.desc.trim() || skill.label || skill.name,
+        invocation: { modelInvocable: skill.model, userInvocable: skill.user },
+        source: 'dsh-csmm',
+        provider: 'dsh-csmm',
+      }))
+    }
+  }
 
-  const registrations = view.group.items
-    .filter((item) => item.kind === 'skill')
-    .map((item) => pick<SkillRecord>(view.workspaceDoc.skills, view.globalDoc.skills, item.name))
-    .filter((item): item is SkillRecord => item !== undefined && item.enabled !== false)
-    .map((item) => skills.register({
-      name: item.name,
-      description: item.desc.trim() || item.label || item.name,
-      ...(item.whenToUse ? { whenToUse: item.whenToUse } : {}),
-      content: item.text.trim() || item.desc.trim() || item.label || item.name,
-      invocation: { modelInvocable: item.model, userInvocable: item.user },
-      source: 'dsh-csmm',
-      provider: 'dsh-csmm',
-    }))
+  const off = skillPolicyOff(target)
+  if (off.length && typeof skills.list === 'function') {
+    let catalog: SkillCatalogLike[] = []
+    try {
+      catalog = await skills.list({ cwd: target.cwd })
+    } catch {
+      catalog = []
+    }
+    for (const record of off) {
+      if (registeredNames.has(record.name)) continue
+      const live = catalog.find(
+        (entry) => entry.name === record.name && (entry.source ?? '') === record.source,
+      )
+      if (!live || !canDisableSkillSource(live.source ?? record.source) || live.provider === 'dsh-csmm') {
+        continue
+      }
+      registeredNames.add(record.name)
+      registrations.push(skills.register({
+        name: record.name,
+        description: '在当前作用域已停用',
+        content: '该技能已在当前作用域停用。',
+        invocation: { modelInvocable: false, userInvocable: false },
+        source: 'dsh-csmm:off',
+        provider: 'dsh-csmm',
+      }))
+    }
+  }
 
+  if (!registrations.length) return undefined
   return () => {
     for (const dispose of registrations) {
       try {
@@ -252,6 +292,40 @@ async function resolveAgentTarget(
     workspaceId = undefined
   }
   return { home, cwd, workspaceId }
+}
+
+/** Skills explicitly disabled for this agent's scope, after workspace-over-global resolution. */
+function skillPolicyOff(input: {
+  home: string
+  cwd?: string
+  workspaceId?: string
+}): SkillPolicyRecord[] {
+  try {
+    const globalDoc = loadStore(globalPaths(input.home))
+    const trusted = input.workspaceId === undefined
+      || globalDoc.workspaces.find((workspace) => workspace.id === input.workspaceId)?.trusted !== false
+    const workspaceDoc = trusted && input.cwd && input.workspaceId
+      ? loadStore(workspacePaths(input.cwd, input.workspaceId))
+      : undefined
+    const records = [...(workspaceDoc?.skillPolicy ?? []), ...globalDoc.skillPolicy]
+    const scope = trusted && input.workspaceId
+      ? { kind: 'workspace' as const, id: input.workspaceId }
+      : { kind: 'global' as const }
+    const seen = new Set<string>()
+    const off: SkillPolicyRecord[] = []
+    for (const record of records) {
+      const key = record.name + '\u0000' + record.source
+      if (seen.has(key)) continue
+      seen.add(key)
+      const resolution = resolveSkillPolicy(records, scope, input.cwd, record.name, record.source)
+      if (resolution.state === 'off' && canDisableSkillSource(record.source) && record.source !== 'dsh-csmm') {
+        off.push(record)
+      }
+    }
+    return off
+  } catch {
+    return []
+  }
 }
 
 interface EffectiveView {

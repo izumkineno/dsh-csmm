@@ -578,6 +578,8 @@ export interface Actions {
   addSkillsFromFiles(files: FileList | File[] | null, fromFolder: boolean): Promise<void>
   /** 读取 DSH 技能注册表；扫描结果在技能页内联显示。 */
   loadDshSkills(): void
+  /** 写入一个 DSH 技能的当前作用域策略；inherit 表示删除本层覆盖。 */
+  setDshSkillPolicy(name: string, source: string, state: 'on' | 'off' | 'inherit'): Promise<void>
   /** 按需读取一个 DSH 技能的正文。 */
   loadDshSkill(name: string, force?: boolean): void
   refreshServers(): void

@@ -31,6 +31,18 @@ export interface SectionRecord {
   server?: string
 }
 
+export type SkillPolicyState = 'on' | 'off'
+export type SkillPolicyInput = SkillPolicyState | 'inherit'
+
+/** Per-scope opt-out for one DSH registry skill, keyed by source + name. */
+export interface SkillPolicyRecord {
+  name: string
+  source: string
+  scope: Scope
+  cwd?: string
+  state: SkillPolicyState
+}
+
 export interface SkillRecord {
   name: string
   label: string
@@ -61,6 +73,17 @@ export interface DshSkill {
   user: boolean
   /** Global registry layer, or a project layer of the requested workspace. */
   origin: 'global' | 'workspace'
+  /** 1-6 root priority: project .dsh, project .agents, custom, user .dsh, user .agents, bundled. */
+  rootPriority: number
+  rootLabel: string
+  /** Project and plugin-owned skills cannot be disabled at runtime. */
+  canDisable: boolean
+  /** Effective policy for the requested scope. */
+  policy: SkillPolicyState
+  /** Where the effective policy came from. */
+  policyFrom: 'workspace' | 'global' | 'default'
+  /** True when this skill is hidden by the effective policy. */
+  disabled: boolean
 }
 
 /** One DSH skill with its instruction body loaded on demand. */
@@ -188,6 +211,7 @@ export interface StoreDocument {
   customs: CustomPromptRecord[]
   skills: SkillRecord[]
   servers: McpServerRecord[]
+  skillPolicy: SkillPolicyRecord[]
   disabledPrompts?: string[]
 }
 
@@ -281,6 +305,7 @@ export type Command =
   | (WriteBase & { type: 'skill.toggle'; scope: Scope; name: string })
   | (WriteBase & { type: 'skill.delete'; scope: Scope; name: string })
   | (WriteBase & { type: 'skill.copy'; from: Scope; to: Scope; names: string[] })
+  | (WriteBase & { type: 'skill.policy'; scope: Scope; name: string; source: string; state: SkillPolicyInput; cwd?: string })
   | (WriteBase & { type: 'mcp.save'; scope: Scope; server: McpServerRecord; secrets?: ServerSecretsPatch })
   | (WriteBase & { type: 'mcp.toggle'; scope: Scope; name: string })
   | (WriteBase & { type: 'mcp.delete'; scope: Scope; name: string })

@@ -56,7 +56,7 @@ export default function SkillPane() {
   if (!sk) {
     if (dsh) {
       const ready = dshDoc?.status === 'ready' && dshDoc.detail ? dshDoc.detail : undefined
-      const editableSource = dsh.origin === 'workspace' && ready?.raw !== undefined
+      const editableSource = dsh.origin === 'workspace' && dsh.source !== 'project-agents' && ready?.raw !== undefined
       const sourceState = dshDoc?.name === dsh.name ? state.sourceState : { status: 'idle' as const, name: dsh.name }
       return (
         <>
@@ -71,6 +71,12 @@ export default function SkillPane() {
           <div className="editor-body" data-dsh-pane data-name={dsh.name}>
             <dl className="meta-grid">
               <dt>来源</dt><dd data-dsh-source={dsh.source}>{DSH_SOURCE_LABEL[dsh.source] ?? dsh.source}{dsh.provider ? ' · ' + dsh.provider : ''}</dd>
+              <dt>根优先级</dt><dd data-dsh-priority>{dsh.rootPriority} · {dsh.rootLabel}</dd>
+              <dt>作用域策略</dt><dd data-dsh-policy-state={dsh.policy} data-dsh-policy-from={dsh.policyFrom}>
+                {dsh.policy === 'off' ? '停用' : '启用'}
+                {' · '}
+                {dsh.policyFrom === 'workspace' ? '本层覆盖' : dsh.policyFrom === 'global' ? '继承全局' : '默认'}
+              </dd>
               {dsh.path && <><dt>位置</dt><dd>{dsh.path}</dd></>}
               <dt>作用域</dt><dd>{dsh.origin === 'workspace' ? '当前工作区可见' : '全局可见'}</dd>
               <dt>调用策略</dt><dd>{dsh.model ? '模型可调用' : '仅用户可用'} · {dsh.user ? '用户可调用' : '不向用户暴露'}</dd>
@@ -108,19 +114,41 @@ export default function SkillPane() {
                       />
                     : <div className="skilldoc" data-dshpreview><Markdown source={dshSkillFile(dshDoc.detail)} /></div>)
                 : <div className="note" data-dsh-doc-loading>正在读取技能正文…</div>}
-            {dsh.origin === 'global' && (
-              <div className="detail-actions">
+            <div className="detail-actions" data-dsh-policy-actions>
+              {dsh.canDisable ? (
+                <>
+                  {state.scope.kind === 'workspace' && (
+                    <button className="btn small" data-dsh-policy="inherit"
+                      onClick={() => { void actions.setDshSkillPolicy(dsh.name, dsh.source, 'inherit') }}>继承全局</button>
+                  )}
+                  <button className="btn small" data-dsh-policy="on"
+                    onClick={() => { void actions.setDshSkillPolicy(dsh.name, dsh.source, 'on') }}>启用</button>
+                  <button className="btn small" data-dsh-policy="off"
+                    onClick={() => { void actions.setDshSkillPolicy(dsh.name, dsh.source, 'off') }}>停用</button>
+                  {state.scope.kind === 'global' && dsh.policyFrom === 'global' && (
+                    <button className="btn small" data-dsh-policy="inherit"
+                      onClick={() => { void actions.setDshSkillPolicy(dsh.name, dsh.source, 'inherit') }}>恢复默认</button>
+                  )}
+                </>
+              ) : (
+                <span className="hint" data-dsh-policy-locked>{dsh.source.startsWith('dsh-csmm') || dsh.source === 'runtime' ? '插件运行时技能不可停用' : '项目技能由 Git 管理，运行时不可停用'}</span>
+              )}
+              {dsh.origin === 'global' && !dsh.disabled && dsh.canDisable && (
                 <button className="btn" data-dsh-copy disabled={copying}
                   onClick={() => {
                     setCopying(true)
                     void actions.copyDshSkillToWorkspace(dsh.name).finally(() => setCopying(false))
                   }}>{copying ? '复制中…' : '复制到工作区并编辑'}</button>
-              </div>
-            )}
+              )}
+            </div>
             <div className="note" data-dsh-note>
-              {dsh.origin === 'workspace'
-                ? '这是当前工作区的项目技能源文件，可在“编辑源文件”中修改；保存后重开会话生效。'
-                : '由 DSH 技能注册表提供，全局/用户级技能只读；可复制到工作区后编辑。停用或修改请在 DSH 侧进行。'}
+              {dsh.source === 'project-agents'
+                ? '项目 .agents 技能由 Git 仓库管理，插件不改写源文件，也不能在运行时停用。'
+                : dsh.origin === 'workspace'
+                  ? '这是当前工作区的项目技能源文件，可在“编辑源文件”中修改；保存后重开会话生效。'
+                  : dsh.disabled
+                    ? '该技能在当前作用域已停用；重新启用后重开会话生效。'
+                    : '全局/用户级技能可在此按作用域启停；复制到工作区后可编辑正文。'}
             </div>
           </div>
           <div className="editor-foot"><span className="hint">DSH 技能来自当前作用域可见的注册表；顶部刷新按钮会重新读取目录与正文。</span></div>
